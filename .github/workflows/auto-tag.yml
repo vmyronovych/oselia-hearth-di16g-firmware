@@ -1,0 +1,43 @@
+name: auto-tag
+
+# Tag a main commit ONLY after its ci run passes: fw-v<major.minor>.<next>. major.minor
+# is the base from firmware SW_VERSION (bump it in a PR to start a new series); the patch
+# increments per successful build. Tags don't release on their own -- run
+# firmware-release.yml (manual) and pick a tag. See firmware/RELEASING.md.
+on:
+  workflow_run:
+    workflows: ["ci"]      # the CI workflow (.github/workflows/ci.yml)
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write          # push tags
+
+concurrency:
+  group: auto-tag          # serialize so two builds can't pick the same patch
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    # only when that ci run actually succeeded
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}   # the exact commit ci validated
+          fetch-depth: 0     # need all tags to compute the next patch
+
+      - name: Compute + push next patch tag
+        run: |
+          base="$(grep -E '^SW_VERSION' firmware/src/config.py \
+                  | sed -E 's/.*"([0-9]+\.[0-9]+).*/\1/')"
+          if [ -z "$base" ]; then echo "::error::could not read SW_VERSION"; exit 1; fi
+          last="$(git tag -l "fw-v${base}.*" | sed -E "s/^fw-v${base}\.//" \
+                  | grep -E '^[0-9]+$' | sort -n | tail -1)"
+          next=$(( ${last:-0} + 1 ))
+          tag="fw-v${base}.${next}"
+          echo "Tagging $tag (base $base, last patch ${last:-none})"
+          git tag "$tag"
+          git push origin "$tag"
+          echo "### Auto-tagged \`$tag\`" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,43 @@
+name: ci
+
+# Gate for merging to main: syntax-check everything and run the host test suites.
+# Make this a required status check in the branch-protection rules for `main` so no
+# untested code lands on the release branch.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Syntax check (py_compile)
+        # Compiles without importing. The OSELIA HA integration lives in its own repo
+        # (vmyronovych/oselia-hearth-di16g) and is validated there (hassfest + HACS).
+        run: |
+          python -m py_compile firmware/src/*.py firmware/config.example.py firmware/tools/*.py
+          python -m py_compile provisioning/*.py
+          python -m py_compile homeassistant/dashboards/*.py
+
+      - name: Firmware host tests
+        working-directory: firmware
+        run: |
+          for t in tests/test_*.py; do echo "== $t =="; python "$t"; done
+
+      - name: Provisioning host tests
+        working-directory: provisioning
+        run: |
+          for t in tests/test_*.py; do echo "== $t =="; python "$t"; done

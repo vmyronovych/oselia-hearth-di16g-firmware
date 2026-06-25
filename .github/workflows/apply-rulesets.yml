@@ -1,0 +1,67 @@
+name: apply-rulesets
+
+# Branch protection as code: apply the ruleset(s) in .github/rulesets/ via the API, so
+# the rules live in source control instead of the GitHub UI. Idempotent -- updates the
+# ruleset if it already exists (matched by name), else creates it.
+#
+# Bootstrap (once): merge this to the default branch, then run it from the Actions tab
+# (Run workflow). After that it re-applies automatically whenever a ruleset file changes.
+#
+# Permissions: managing rulesets needs repo-admin rights, which the built-in GITHUB_TOKEN
+# does NOT have (`administration` is not a grantable GITHUB_TOKEN permission scope). So a
+# PAT is REQUIRED: create a fine-grained token with this repo's "Administration: Read and
+# write" and add it as the repo secret ADMIN_PAT (Settings -> Secrets and variables ->
+# Actions -> New repository secret).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/rulesets/*.json"
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply rulesets
+        env:
+          GH_TOKEN: ${{ secrets.ADMIN_PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::ADMIN_PAT secret is not set. Managing rulesets needs a PAT with" \
+                 "repository Administration: write -- the built-in GITHUB_TOKEN cannot do" \
+                 "it. See firmware/RELEASING.md."
+            exit 1
+          fi
+          shopt -s nullglob
+          # Probe once. Rulesets/branch protection require GitHub Pro for a PRIVATE repo
+          # (free on public repos) -> a 403 "Upgrade to GitHub Pro". Treat that as a
+          # skip (warn, succeed) rather than a hard failure, so it isn't red on every run.
+          if ! list="$(gh api "repos/$REPO/rulesets" 2>&1)"; then
+            if printf '%s' "$list" | grep -q "Upgrade to GitHub Pro"; then
+              echo "::warning::Branch-protection rulesets need GitHub Pro for a PRIVATE" \
+                   "repo (free on a public repo) -- NOT applied. See firmware/RELEASING.md."
+              exit 0
+            fi
+            echo "::error::$list"; exit 1
+          fi
+          for f in .github/rulesets/*.json; do
+            name="$(jq -r .name "$f")"
+            echo "::group::$name ($f)"
+            id="$(printf '%s' "$list" | jq -r ".[] | select(.name==\"$name\") | .id")"
+            if [ -n "$id" ] && [ "$id" != "null" ]; then
+              echo "updating ruleset $name (id $id)"
+              gh api -X PUT "repos/$REPO/rulesets/$id" --input "$f" >/dev/null
+            else
+              echo "creating ruleset $name"
+              gh api -X POST "repos/$REPO/rulesets" --input "$f" >/dev/null
+            fi
+            echo "::endgroup::"
+          done
+          echo "Rulesets applied."

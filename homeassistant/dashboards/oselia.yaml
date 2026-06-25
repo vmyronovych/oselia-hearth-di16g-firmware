@@ -1,0 +1,157 @@
+# OSELIA Hearth dashboard (Sections view) -- per-unit (device 893922).
+# Generated; logo is embedded as a self-contained data URI (no www copy).
+# Adapt entity ids (hearth_<id>_...) per gateway. Pushed live via WS.
+
+title: OSELIA Hearth
+views:
+  - type: sections
+    title: Hearth
+    path: hearth
+    icon: "mdi:home-lightning-bolt"
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: picture
+            image: "data:image/svg+xml;base64,PD94bWwgdmVyc2...(logo data URI)..."
+            tap_action:
+              action: none
+            alt_text: OSELIA Hearth
+          - type: heading
+            heading: Status
+            heading_style: title
+            icon: "mdi:heart-pulse"
+          - type: tile
+            entity: update.hearth_893922_firmware
+            name: Firmware
+          - type: markdown
+            show_empty: false
+            content: >-
+              {% set e = state_attr('update.hearth_893922_firmware',
+              'release_feed_error') %}{% if e %}### ⚠️ Firmware updates
+              unavailable
+
+              {{ e }}{% endif %}
+          - type: tile
+            entity: binary_sensor.hearth_893922_ethernet_link
+            name: Ethernet
+          - type: tile
+            entity: sensor.hearth_893922_ip_address
+            name: IP address
+          - type: tile
+            entity: sensor.hearth_893922_uptime
+            name: Uptime
+          - type: tile
+            entity: sensor.hearth_893922_temperature
+            name: Temperature
+          - type: tile
+            entity: sensor.hearth_893922_input_boards_online
+            name: Boards online
+          - type: tile
+            entity: sensor.hearth_893922_reconnects
+            name: Reconnects
+          - type: tile
+            entity: sensor.hearth_893922_dropped_events
+            name: Dropped
+      - type: grid
+        cards:
+          - type: heading
+            heading: Wall switches · board 1
+            heading_style: title
+            icon: "mdi:light-switch"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_1
+            name: Input 1
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_2
+            name: Input 2
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_3
+            name: Input 3
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_4
+            name: Input 4
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_5
+            name: Input 5
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_6
+            name: Input 6
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_7
+            name: Input 7
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_8
+            name: Input 8
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_9
+            name: Input 9
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_10
+            name: Input 10
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_11
+            name: Input 11
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_12
+            name: Input 12
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_13
+            name: Input 13
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_14
+            name: Input 14
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_15
+            name: Input 15
+            icon: "mdi:gesture-tap-button"
+          - type: tile
+            entity: event.hearth_893922_board_1_input_16
+            name: Input 16
+            icon: "mdi:gesture-tap-button"
+      - type: grid
+        cards:
+          - type: heading
+            heading: Controls
+            heading_style: title
+            icon: "mdi:tune-vertical"
+          - type: tile
+            entity: button.hearth_893922_restart
+            name: Restart
+          - type: tile
+            entity: button.hearth_893922_identify
+            name: Identify
+          - type: entities
+            title: Gesture tuning
+            show_header_toggle: false
+            entities:
+              - entity: number.hearth_893922_long_press_time
+                name: Long press
+              - entity: number.hearth_893922_double_tap_window
+                name: Double-tap window
+              - entity: number.hearth_893922_debounce_time
+                name: Debounce
+              - entity: select.hearth_893922_log_level
+                name: Log level
+          - type: entities
+            title: Topology
+            show_header_toggle: false
+            entities:
+              - entity: sensor.hearth_893922_board_addresses
+                name: Board addresses
+              - entity: sensor.hearth_893922_last_input
+                name: Last input

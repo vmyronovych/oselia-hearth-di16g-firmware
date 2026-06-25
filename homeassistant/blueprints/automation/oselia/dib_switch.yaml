@@ -1,0 +1,66 @@
+blueprint:
+  name: Hearth switch → actions
+  description: >
+    Run actions when a Hearth wall-switch input is pressed. Pick the input's
+    `event` entity and the action(s) for single / double / long press. Leave a
+    press type empty to ignore it. (Double press only fires if DOUBLE_GAP_MS > 0 on
+    the device.)
+  domain: automation
+  source_url: https://github.com/vmyronovych/oselia-hearth-di16g-firmware/blob/main/homeassistant/blueprints/automation/oselia/dib_switch.yaml
+  input:
+    dib_input:
+      name: Switch input
+      description: The Hearth input (event entity) to react to.
+      selector:
+        entity:
+          filter:
+            - integration: mqtt
+              domain: event
+    action_single:
+      name: Single press
+      description: Action(s) to run on a single press.
+      default: []
+      selector:
+        action: {}
+    action_double:
+      name: Double press
+      description: Action(s) to run on a double press.
+      default: []
+      selector:
+        action: {}
+    action_long:
+      name: Long press
+      description: Action(s) to run on a long press.
+      default: []
+      selector:
+        action: {}
+
+mode: queued
+max: 10
+
+# An event entity's state is the timestamp of the last event; it changes on every
+# press, so a state trigger fires once per press. event_type carries which gesture.
+trigger:
+  - platform: state
+    entity_id: !input dib_input
+
+condition:
+  - condition: template
+    value_template: >
+      {{ trigger.to_state is not none
+         and trigger.to_state.state not in ['unknown', 'unavailable'] }}
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state.attributes.event_type == 'single' }}"
+        sequence: !input action_single
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state.attributes.event_type == 'double' }}"
+        sequence: !input action_double
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.to_state.attributes.event_type == 'long' }}"
+        sequence: !input action_long

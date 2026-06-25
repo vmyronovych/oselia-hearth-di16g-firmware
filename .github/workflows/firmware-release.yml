@@ -1,0 +1,77 @@
+name: firmware-release
+
+# Publish a firmware release from an existing tag -- manual + deliberate. Run it from
+# the Actions tab; leave `tag` blank to release the latest fw-v* tag, or type a specific
+# one (e.g. fw-v0.6.2). The tag is the source of version truth: it is stamped into the
+# bundled config.py so the device reports exactly this version. The workflow builds the
+# OTA bundle + manifest and publishes a GitHub Release; HA's OSELIA integration then
+# offers the update. Tags come from auto-tag.yml. See firmware/RELEASING.md.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (blank = latest fw-v* tag)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write          # create the release + upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # need all tags
+
+      - name: Resolve + check out the tag
+        id: tag
+        run: |
+          tag="${{ inputs.tag }}"
+          if [ -z "$tag" ]; then
+            tag="$(git tag -l 'fw-v*' | sort -V | tail -1)"
+          fi
+          if [ -z "$tag" ]; then echo "::error::no fw-v* tag found"; exit 1; fi
+          if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::tag $tag does not exist"; exit 1
+          fi
+          git checkout --quiet "$tag"
+          echo "Releasing $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#fw-v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Host tests (release gate)
+        working-directory: firmware
+        run: |
+          for t in tests/test_*.py; do echo "== $t =="; python "$t"; done
+          cd ../provisioning && for t in tests/test_*.py; do echo "== $t =="; python "$t"; done
+
+      - name: Build bundle + manifest
+        working-directory: firmware
+        env:
+          V: ${{ steps.tag.outputs.version }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          sed -i "s/^SW_VERSION = .*/SW_VERSION = \"$V\"/" src/config.py
+          BUNDLE="hearth-$V.bundle"
+          python tools/ota_build.py \
+            --out "$BUNDLE" --version "$V" --manifest manifest.json \
+            --url "https://github.com/$REPO/releases/download/$TAG/$BUNDLE" \
+            --release-url "https://github.com/$REPO/releases/tag/$TAG" \
+            --notes "OSELIA Hearth firmware $V"
+
+      - name: Publish GitHub Release
+        working-directory: firmware
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.tag.outputs.version }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh release create "$TAG" "hearth-$V.bundle" manifest.json \
+            --title "Firmware $V" --generate-notes

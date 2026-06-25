@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OSELIA brand logo, extracted from OSELIA_Ember_DI16-X_label_93mm.svg.
+     Icon (hearth/home mark) + OSELIA wordmark + SMART AUTOMATION tagline.
+     viewBox cropped to the logo bbox in the label's screen coordinates. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 53 92 49">
+<g transform="matrix(1 0 0 -1 0 172.91)">
+<path d="M32.88,93.54 L58.96,93.54 L58.96,109.98 L45.92,117.92 L32.88,109.98 Z " fill="#0d9488"/>
+<circle cx="45.92" cy="102.33" r="3.26" fill="#ffffff"/>
+<circle cx="45.92" cy="102.33" r="1.28" fill="#0d9488"/>
+<text transform="translate(26.17,82.20) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="9.40" fill="#1f2937">O</text>
+<text transform="translate(34.39,82.20) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="9.40" fill="#1f2937">S</text>
+<text transform="translate(41.56,82.20) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="9.40" fill="#1f2937">E</text>
+<text transform="translate(48.73,82.20) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="9.40" fill="#1f2937">L</text>
+<text transform="translate(55.37,82.20) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="9.40" fill="#1f2937">I</text>
+<text transform="translate(58.88,82.20) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="9.40" fill="#1f2937">A</text>
+<text transform="translate(23.14,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">S</text>
+<text transform="translate(26.08,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">M</text>
+<text transform="translate(29.59,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">A</text>
+<text transform="translate(32.53,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">R</text>
+<text transform="translate(35.65,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">T</text>
+<text transform="translate(39.97,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">A</text>
+<text transform="translate(42.90,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">U</text>
+<text transform="translate(46.03,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">T</text>
+<text transform="translate(48.77,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">O</text>
+<text transform="translate(52.09,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">M</text>
+<text transform="translate(55.60,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">A</text>
+<text transform="translate(58.54,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">T</text>
+<text transform="translate(61.28,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">I</text>
+<text transform="translate(62.85,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">O</text>
+<text transform="translate(66.17,72.00) scale(1,-1)" text-anchor="start" font-family="Helvetica, Arial, sans-serif" font-weight="normal" font-size="3.50" fill="#0f766e">N</text>
+</g>
+</svg>
