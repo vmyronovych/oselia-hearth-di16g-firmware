@@ -21,7 +21,7 @@ MQTT** — no cloud, no DNS, deterministic timing. This repo holds everything ne
 build, flash, provision, and update a unit.
 
 > The first-party Home Assistant **integration** lives in its own HACS repo:
-> **[vmyronovych/oselia-hearth-di16g](https://github.com/vmyronovych/oselia-hearth-di16g)**.
+> **[vmyronovych/oselia-hearth-di16g-ha](https://github.com/vmyronovych/oselia-hearth-di16g-ha)**.
 > The broader product (hardware, architecture) lives in
 > **[vmyronovych/oselia](https://github.com/vmyronovych/oselia)**.
 

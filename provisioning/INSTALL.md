@@ -254,7 +254,7 @@ When you accept, by default (OSELIA integration) it does, straight into Home Ass
   so the device shows up under OSELIA with no manual "Add integration" step,
   > **One-time prerequisite:** the OSELIA integration *component* must be installed in
   > Home Assistant first — via **HACS** as a custom repository
-  > ([vmyronovych/oselia-hearth-di16g](https://github.com/vmyronovych/oselia-hearth-di16g),
+  > ([vmyronovych/oselia-hearth-di16g-ha](https://github.com/vmyronovych/oselia-hearth-di16g-ha),
   > category: Integration), then restart HA. The wizard *configures* the integration but
   > does not install the component itself.
 - sets the **firmware release feed** so the device is OTA-updatable from the HA UI

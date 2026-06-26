@@ -420,7 +420,7 @@ dib-gateway-fw/
 ```
 
 The OSELIA custom integration lives in its own repo
-(**vmyronovych/oselia-hearth-di16g**, HACS-installable; design contract in
+(**vmyronovych/oselia-hearth-di16g-ha**, HACS-installable; design contract in
 `homeassistant/INTEGRATION_SPEC.md`). The in-repo HA assets — `homeassistant/dashboards/`
 (`generate.py` + reference yaml) and `homeassistant/blueprints/…` — and the provisioning
 pusher (`provisioning/ha_setup.py`,

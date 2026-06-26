@@ -8,7 +8,7 @@ The gateway integrates with Home Assistant in one of two modes (firmware
   appear automatically under HA's MQTT integration. The files in this folder add the
   optional "nice UX" layer for this mode.
 - **`oselia`** (`provision.py --oselia`) — the first-party **OSELIA custom integration**
-  (its own repo, **[vmyronovych/oselia-hearth-di16g](https://github.com/vmyronovych/oselia-hearth-di16g)**,
+  (its own repo, **[vmyronovych/oselia-hearth-di16g-ha](https://github.com/vmyronovych/oselia-hearth-di16g-ha)**,
   HACS-installable) owns the entities, so the device appears under OSELIA, not MQTT, and
   gains a native firmware `update` (OTA) entity. The firmware then skips publishing MQTT
   discovery. Design contract: `INTEGRATION_SPEC.md`.

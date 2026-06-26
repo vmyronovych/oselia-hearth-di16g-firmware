@@ -1446,7 +1446,7 @@ def _add_ha_hearth_dashboard(args):
     Configures the integration's firmware release feed (defaults to DEFAULT_RELEASE_URL --
     override with --release-url) and (re)builds the OSELIA Hearth dashboard (/oselia-hearth)
     from the gateways the integration has created. The integration itself installs via HACS
-    (github.com/vmyronovych/oselia-hearth-di16g) and its broker is set in Add Integration.
+    (github.com/vmyronovych/oselia-hearth-di16g-ha) and its broker is set in Add Integration.
     Returns an exit code.
 
     Broker details aren't needed when the OSELIA config entry already exists (the common

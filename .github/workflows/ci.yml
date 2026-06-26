@@ -26,7 +26,7 @@ jobs:
 
       - name: Syntax check (py_compile)
         # Compiles without importing. The OSELIA HA integration lives in its own repo
-        # (vmyronovych/oselia-hearth-di16g) and is validated there (hassfest + HACS).
+        # (vmyronovych/oselia-hearth-di16g-ha) and is validated there (hassfest + HACS).
         run: |
           python -m py_compile firmware/src/*.py firmware/config.example.py firmware/tools/*.py
           python -m py_compile provisioning/*.py
