@@ -4,7 +4,7 @@ Status: **implemented.** Design contract for a first-party Home
 Assistant **custom integration** that adopts the Hearth gateway as its own branded
 device (not under the generic "MQTT" integration) and hosts **OTA firmware updates**
 via a native HA `update` entity. The integration itself now lives in its own public
-repo, **[vmyronovych/oselia-hearth-di16g](https://github.com/vmyronovych/oselia-hearth-di16g)**
+repo, **[vmyronovych/oselia-hearth-di16g-ha](https://github.com/vmyronovych/oselia-hearth-di16g-ha)**
 (HACS-installable); this doc is its design contract. Sits alongside `README.md` (the
 current MQTT-discovery assets), `../firmware/SPEC.md` (firmware behaviour) and
 `../firmware/OTA_SPEC.md` (the on-device slot/rollback core this reuses). Where

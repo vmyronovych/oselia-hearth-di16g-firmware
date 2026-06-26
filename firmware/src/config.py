@@ -118,7 +118,7 @@ INPUT_DISCOVERY = "both"
 #               config, retained); the device appears under HA's built-in MQTT
 #               integration. This is the original behaviour and the default.
 #   "oselia" -> the firmware SKIPS publishing those discovery configs; the first-party
-#               OSELIA custom integration (its own repo, vmyronovych/oselia-hearth-di16g)
+#               OSELIA custom integration (its own repo, vmyronovych/oselia-hearth-di16g-ha)
 #               creates the entities itself, so the device appears under OSELIA, not MQTT.
 # The data + command topics are IDENTICAL in both modes -- only discovery publishing
 # differs -- so a unit can switch modes with no other change. Set per install via the
