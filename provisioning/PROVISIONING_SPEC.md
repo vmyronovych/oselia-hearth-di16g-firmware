@@ -178,10 +178,12 @@ a board later" tool.
 
 **Quiescing a RUNNING unit (cooperative maintenance command).** Re-provisioning a unit that
 is actively running the firmware means pausing it so the host can rewrite the board over USB.
-Doing that host-side (`_disable_app`: break into the REPL, rename the loader, reset) fights
-the firmware's **hardware watchdog** — when the host interrupts core 0 the WDT stops being
-fed and **hard-resets** the board, and a cold boot can wedge USB enumeration (see the
-firmware boot-wedge notes). So the wizard first tries a **cooperative quiesce**: it finds the
+Doing that host-side (`_disable_app`: break into the REPL, rename the loader, reset) is
+unreliable on a running unit — host break-in interrupts core 0's input loop, and a cold
+reset can wedge USB enumeration (see the firmware boot-wedge notes). (As of fw 0.7.0 the
+**hardware watchdog lives on core 1**, not core 0 — an MCP/I²C stall on core 0 never resets
+the board; the WDT guards the network core.) So the wizard first tries a
+**cooperative quiesce**: it finds the
 unit on the network (mDNS / LAN scan → the single `online` device on `<base>/+/status`,
 without touching USB so the unit's MQTT session stays alive) and publishes
 `<base>/<id>/cmd/maintenance`. The **firmware** then renames its loader

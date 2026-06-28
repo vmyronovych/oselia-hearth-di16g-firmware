@@ -95,20 +95,66 @@ the integration creates exactly the live inputs.
 
 ## Protocol contract (firmware ↔ integration)
 
-All under `BASE_TOPIC=hearth`, `base = hearth/<device_id>`. This is the existing wire
-(`firmware/src/ha_discovery.py`, `diag.py`, `config.py`) — **unchanged**.
+All under `BASE_TOPIC=hearth`, `base = hearth/<device_id>`.
+
+> **Firmware ≥ 0.7.0** extends `diag/state` with structured per-MCP root-cause data
+> and adds the `…/diag/event` fault stream (see schema below). All new fields are
+> additive — older integration builds that read only the original keys keep working.
 
 | Topic | Dir | Retain | Payload | HA entity (owned by `oselia`) |
 |---|---|---|---|---|
 | `…/status` | dev→HA | yes | `online`/`offline` | availability for all entities |
 | `…/board<b>/input<p>/action` | dev→HA | no | `single`/`double`/`long` | `event` per input (≤128) |
 | `…/cfg` | dev→HA | yes | `{long_ms,double_gap_ms,debounce_ms,log_level}` | state for the numbers + select |
-| `…/diag/state` | dev→HA | yes | `{fw,uptime_s,ip,eth,mqtt,boards,board_addrs,mem_free,temp_c,reconnects,dropped,last}` | diagnostic sensors + `eth` binary_sensor + "Last log" |
+| `…/diag/state` | dev→HA | yes | structured blob (below) | Diagnostics sensor + per-board MCP entities + counters + diagnostic sensors |
+| `…/diag/event` | dev→HA | **no** | one fault record (below) | fault `event` entity (HA logbook timeline) |
 | `…/cmd/reboot` `…/cmd/identify` | HA→dev | no | `PRESS` | `button` (restart / identify) |
 | `…/cmd/long_ms` `…/cmd/double_gap_ms` `…/cmd/debounce_ms` | HA→dev | no | int (ms) | `number` (config) |
 | `…/cmd/log_level` | HA→dev | no | `ERROR`/`WARN`/`INFO`/`DEBUG` | `select` (config) |
 | `…/ota/cmd` | HA→dev | no | OTA command JSON (below) | (driven by the `update` entity) |
 | `…/ota/state` | dev→HA | yes | `{stage,percent,running_version,target_version,error}` | `update` entity progress/state |
+
+### `diag/state` schema (retained — the canonical, exportable root-cause artifact)
+
+```jsonc
+{
+  "fw": "0.7.0", "hw": "DI16-G", "uptime_s": 5400, "ip": "192.168.1.200",
+  "reset_cause": "wdt",            // power_on | wdt | soft | hard | deepsleep | unknown
+  "health": "mcp_fault",           // ok | degraded | mcp_fault | net_fault
+  "eth": true, "mqtt": true,
+  "boards": 5,                     // resolved board count (= boards_total; input entities for all)
+  "boards_total": 5, "boards_ok": 4,
+  "board_addrs": ["0x20", "0x21", "..."],
+  "mcp": [                         // one entry per board, in board order
+    {"board": 1, "addr": "0x20", "ok": true,  "code": "",        "detail": "",
+     "fails": 0,  "last_ok_s": 1,   "recoveries": 0},
+    {"board": 2, "addr": "0x21", "ok": false, "code": "i2c_eio", "detail": "OSError 5 read",
+     "fails": 12, "last_ok_s": 480, "recoveries": 3}
+  ],
+  "counters": {"bus_recoveries": 4, "mcp_resets": 2,
+               "reconnects": 1, "dropped": 0},
+  "last_fault": {"ts": 5212, "component": "mcp", "code": "i2c_eio",
+                 "detail": "OSError 5 read", "board": 2},
+  "recent": [ /* up to DIAG_FAULT_RING fault records, newest last (the timeline) */ ],
+  "mem_free": 41200, "temp_c": 44.1,
+  // back-compat fields retained: reconnects, dropped, last
+  "reconnects": 1, "dropped": 0, "last": "b1/in3 single"
+}
+```
+
+`diag/event` payload is a single fault record: `{ts, component, code, detail[, board]}`
+(published the instant a fault transitions, so HA's logbook shows a real-time timeline
+rather than only the latest retained snapshot).
+
+**Stable error-code taxonomy** (`code` / fault `code`; greppable to firmware
+`src/mcp_health.py`): `i2c_eio`, `i2c_timeout`, `mcp_absent`, `mcp_init_fail`,
+`bus_recovered`, `mcp_reset`, `eth_link_lost`, `mqtt_disconnect`,
+`mqtt_connack_refused`, `ota_*`. The raw errno/exception text rides in `detail`.
+(Input is pure-polling; there is no INT, so no `int_stuck`.)
+
+Input count still comes from `diag/state.boards` (×16). The integration should create
+input entities for all `boards`, and surface per-board health from `mcp[]` (so a single
+down board never hides the others' inputs).
 
 Device identity for `device_info`: `manufacturer=OSELIA`, `model="Hearth (DI16-G)"`,
 `hw_version`, `serial_number=<device_id>`, `sw_version` from `diag/state.fw`,

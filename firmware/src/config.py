@@ -45,7 +45,12 @@ PIN_CH9120_RST = 19            # active LOW (POC: Pin(19))
 I2C_ID = 1                     # manufactured dib-monolith uses I2C1 (GP26/GP27)
 PIN_I2C_SDA = 26               # board net SDA -> RP2040-ETH ADC0 pad = GP26 (I2C1 SDA)
 PIN_I2C_SCL = 27               # board net SCK -> RP2040-ETH ADC1 pad = GP27 (I2C1 SCL)
-I2C_FREQ = 400_000             # POC used 100_000; 400k is fine for a short bus
+I2C_FREQ = 50_000              # 50 kHz: generous rise-time margin for the long ember
+                               # satellite runs (cable adds bus capacitance; slower edges
+                               # = far fewer NACK/retry/recovery events). POC ran 100k,
+                               # 400k was an optimistic "short bus" bump. Even at 8 chips
+                               # the per-poll bus time (~8 ms) fits the 20 ms poll window;
+                               # imperceptible for wall switches.
 # Board discovery: with MCP_AUTODISCOVER the firmware scans the bus at boot and
 # drives exactly the chips that respond (0x20..0x27) -- no count to configure, and
 # an unwired board simply isn't advertised (no permanent MCP fault). MCP_ADDRESSES
@@ -53,15 +58,14 @@ I2C_FREQ = 400_000             # POC used 100_000; 400k is fine for a short bus
 # (the wizard's --boards / site.json board_count does this) to pin an exact list.
 MCP_AUTODISCOVER = True
 MCP_ADDRESSES = [0x20]         # fallback / explicit list (board1 = 0x20)
-PIN_MCP_INT = 22               # SHARED wired-OR INT line; board net INTA -> GP22
-                               # (POC used GP2; manufactured board routes it to GP22)
+# INT is NOT used: the firmware reads inputs by POLLING (MCP_POLL_MS). The shared
+# wired-OR INT line caused the original freeze + dropped-press faults, so it's
+# deliberately ignored -- GP22 and these settings are legacy/unused (no board change
+# needed; the physical line just goes unconnected in firmware).
+PIN_MCP_INT = None             # legacy: shared INT net (GP22). Unused under polling.
 PIN_MCP_RESET = 9              # board net RESET -> MCP /RESET (pin 18) on GP9.
-                               # Driven HIGH (deasserted) at boot, pulsed LOW once to
-                               # reset the chips. None = tied high in hardware (POC).
-MCP_INT_ACTIVE_LOW = True      # active-low INT (IOCON bit)
-MCP_INT_OPEN_DRAIN = True      # IOCON ODR=1 so all chips can share one INT line
-                               # (needs a pull-up on the INT net; GP22 internal
-                               # pull-up is enabled, add external 4.7k for >2 chips)
+                               # Driven HIGH (deasserted) at boot, pulsed LOW to reset
+                               # the chips (boot + L2 recovery). None = tied high (POC).
 
 # Onboard WS2812 status LED (single addressable RGB pixel)
 PIN_STATUS_LED = 25            # WS2812 data pin (POC: LED_PIN = 25)
@@ -101,7 +105,7 @@ DEVICE_ID = None               # None -> derive from unique_id() last 6 hex
 DEVICE_NAME = "Hearth"
 DEVICE_MODEL = "Hearth (DI16-G)"
 DEVICE_MANUFACTURER = "OSELIA"
-SW_VERSION = "0.6.0"
+SW_VERSION = "0.7.0"
 HW_VERSION = "DI16-G"                   # board model (shown as Hardware in HA)
 PROJECT_URL = "https://github.com/vmyronovych/oselia-hearth-di16g-firmware"  # HA discovery origin
 
@@ -151,9 +155,31 @@ RECONNECT_BACKOFF_MIN_MS = 1000    # first retry delay
 RECONNECT_BACKOFF_MAX_MS = 30000   # cap
 DISCOVERY_REPUBLISH_ON_RECONNECT = True
 
-# I2C resilience
+# I2C resilience + MCP recovery (an MCP fault must never freeze inputs or reboot)
 I2C_RETRIES = 3                # retry count for MCP reads/writes
-MCP_HEALTHCHECK_MS = 2000      # how often core0 re-verifies the MCP responds
+I2C_TIMEOUT_US = 50000         # per-transaction hardware timeout (us). Bounds a core0
+                               # stall on a dead/floating bus (e.g. an unpowered MCP
+                               # board removes the bus pull-ups) so a hung I2C op can
+                               # never starve the watchdog. 0/None = port default.
+MCP_HEALTHCHECK_MS = 2000      # how often core0 re-verifies/re-inits a down MCP
+MCP_POLL_MS = 20               # PERIODIC poll of healthy chips, independent of the
+                               # shared INT line. The INT is only a latency
+                               # accelerator; input must never depend solely on a
+                               # single wired-OR IRQ (a missed/quirky INT would
+                               # silently drop presses). ~20 ms = imperceptible for
+                               # wall switches, light I2C load.
+MCP_RECOVERY_AFTER_FAILS = 3   # consecutive failed health checks on a board before
+                               # escalating to a bus/reset recovery
+MCP_RECOVERY_MIN_INTERVAL_MS = 10000  # min spacing between recovery actions (no
+                               # thrash); escalates L1 (I2C reclock) -> L2 (/RESET)
+MCP_RECOVERY_MAX_INTERVAL_MS = 300000  # backoff cap: the recovery interval doubles
+                               # after each action up to this (5 min). A persistently
+                               # absent chip must not keep pulsing the SHARED /RESET
+                               # line (which would reset the HEALTHY boards too); the
+                               # 2 s health-check still auto-recovers a returning chip
+NET_BOARD_WAIT_MS = 3000       # core1 waits this long for core0 to resolve the board
+                               # set before its first discovery/diag, then falls back
+                               # to the config list (network is never gated on I2C)
 
 # Logging: 0=ERROR 1=WARN 2=INFO 3=DEBUG
 LOG_LEVEL = 2
@@ -169,6 +195,8 @@ LOG_LEVEL = 2
 # via the wizard (`provision.py --no-diag` -> site.json "diag": false).
 DIAG_ENABLE = True
 DIAG_INTERVAL_S = 10           # how often to refresh the diag/state snapshot
+DIAG_FAULT_RING = 16           # recent[] fault-history length in the diag blob (one
+                               # retained export then carries the fault timeline)
 # Two-way control: subscribe to <base>/<id>/cmd/# and expose HA `button` entities
 # (Restart, Identify). Commands are handled on core1 after the gesture queue is
 # drained, so they never delay a button publish.

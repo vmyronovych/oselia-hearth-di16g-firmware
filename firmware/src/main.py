@@ -49,27 +49,24 @@ def _validate_config():
     _validate_addresses(cfg.MCP_ADDRESSES)   # the explicit / fallback list
 
 
-def _resolve_mcp(i2c):
-    """Scan the bus (unless pinned) and return the MCP address list to drive.
-
-    Bounded retry because satellite chips may power up just after the MCU. Falls
-    back to cfg.MCP_ADDRESSES inside select_addresses if a scan finds nothing.
-    """
-    import utime
-    if not cfg.MCP_AUTODISCOVER:
-        return list(cfg.MCP_ADDRESSES)
-    scanned = []
-    for _ in range(5):
-        try:
-            scanned = list(i2c.scan())
-        except Exception:
-            scanned = []
-        if any(mcp_select.MCP_ADDR_MIN <= a <= mcp_select.MCP_ADDR_MAX
-               for a in scanned):
-            break
-        utime.sleep_ms(200)
-    return mcp_select.select_addresses(scanned, cfg.MCP_ADDRESSES,
-                                       cfg.MCP_AUTODISCOVER)
+def _reset_cause():
+    """Why we last booted, as a name for the diag blob ("power_on"|"wdt"|"soft"|...).
+    A `wdt` value is the direct answer to "did the watchdog reboot the Hearth?".
+    Best-effort: ports that don't implement machine.reset_cause() -> "unknown".
+    HW-VERIFY: confirm the rp2 build reports WDT_RESET after a forced stall."""
+    try:
+        import machine
+        cause = machine.reset_cause()
+    except Exception:
+        return "unknown"
+    names = {}
+    for attr, name in (("PWRON_RESET", "power_on"), ("WDT_RESET", "wdt"),
+                       ("HARD_RESET", "hard"), ("SOFT_RESET", "soft"),
+                       ("DEEPSLEEP_RESET", "deepsleep")):
+        v = getattr(machine, attr, None)
+        if v is not None:
+            names[v] = name
+    return names.get(cause, "unknown")
 
 
 def main():
@@ -83,35 +80,29 @@ def main():
     # Seed live-tunable timings from config BEFORE core1 spawns, so both cores agree
     # on the initial values with no startup race (core1 may publish/handle commands).
     shared.init_tunables(cfg.LONG_MS, cfg.DOUBLE_GAP_MS, cfg.DEBOUNCE_MS)
+    shared.set_reset_cause(_reset_cause())
     queue = EventQueue(cfg.EVENT_QUEUE_SIZE, lock)
-
-    # Resolve the MCP boards once, here, before spawning core1 -- so both cores
-    # agree on the count (core1 needs it for HA discovery) with no cross-core race.
-    i2c = input_task.build_i2c()
-    mcp_addrs = _resolve_mcp(i2c)
-    _validate_addresses(mcp_addrs, "resolved MCP boards")
-    n_boards = len(mcp_addrs)
-    log.info("MCP boards: %d (%s)%s" % (
-        n_boards, ",".join("0x%02x" % a for a in mcp_addrs),
-        " autodiscover" if cfg.MCP_AUTODISCOVER else " pinned"))
 
     # Warm up modules that are otherwise imported lazily at runtime, BEFORE
     # starting core1. The RP2040 import lock + GIL deadlock if both cores `import`
-    # at the same instant; after spawning, input_task's first line
-    # (clock.from_utime -> import utime) would race net_task's status_led
-    # `import neopixel`. Importing them here on the main thread removes the race.
-    # HW-VERIFY: confirmed on hardware -- without this, boot hangs right after the
-    # "MCP boards" log (core1 never reaches "configuring CH9120...").
+    # at the same instant; after spawning, input_task's clock.from_utime -> import
+    # utime would race net_task's status_led `import neopixel`. Importing them here
+    # on the main thread removes the race.
+    # HW-VERIFY: confirmed on hardware -- without this, boot hangs (core1 never
+    # reaches "configuring CH9120...").
     import utime                          # noqa: F401  (clock.from_utime, both cores)
     try:
         import neopixel                   # noqa: F401  (status_led lazy import, core1)
     except ImportError:
         pass
 
-    # Spawn the networking task on core 1.
+    # Network FIRST: spawn core1 before any I2C work so the CH9120/MQTT bring-up is
+    # never gated on the bus. core0 (input_task) then builds I2C, resolves the board
+    # set, and publishes it via SharedState; core1 waits (bounded) for that before
+    # its first discovery/diag publish. An MCP fault can no longer delay the network.
     def _net():
         try:
-            net_task.run(shared, queue, device_id, mcp_addrs)
+            net_task.run(shared, queue, device_id)
         except Exception as e:           # keep the failure visible; core0/WDT react
             log.error("net_task crashed: %s" % e)
 
@@ -121,8 +112,9 @@ def main():
         pass
     _thread.start_new_thread(_net, ())
 
-    # Run the real-time input loop on core 0 (this thread) forever.
-    input_task.run(shared, queue, i2c, mcp_addrs)
+    # Run the real-time input loop on core 0 (this thread) forever. It owns I2C +
+    # board resolution + MCP recovery now.
+    input_task.run(shared, queue)
 
 
 if __name__ == "__main__":

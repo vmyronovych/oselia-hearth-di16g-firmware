@@ -21,6 +21,7 @@ from net_stream import UartStream
 from mqtt_client import MQTTClient, MQTTError
 import ha_discovery as ha
 import diag
+import mcp_health
 import clock
 import log
 
@@ -29,10 +30,21 @@ try:
 except Exception:
     status_led = None
 
+# The hardware watchdog lives on CORE 1 (the network task), not core 0. Rationale
+# (SPEC.md sec.12 + user requirement): an MCP/I2C stall on core 0 must NEVER reboot
+# the board -- a dead bus is reported and recovered, not reset. The WDT therefore
+# guards only the *network* core: it is fed from _beat() (called every core1 pass and
+# during every chunked blocking wait), so it trips only if net_task itself wedges.
+_wdt = None
+
 
 def _beat(shared, led, mono):
-    """Update heartbeat + sync LED subsystem states from shared + render once."""
+    """Feed the watchdog + sync LED subsystem states from shared + render once.
+    Called every core1 loop pass and inside every blocking wait, so the WDT stays fed
+    as long as the network core is alive."""
     shared.beat(utime.ticks_ms())
+    if _wdt is not None:
+        _wdt.feed()
     if led is not None:
         if shared.ready:
             led.boot_done()
@@ -52,11 +64,11 @@ def _sleep_beat(shared, led, mono, ms):
         waited += 50
 
 
-def run(shared, queue, device_id, mcp_addrs):
-    n_boards = len(mcp_addrs)
-    # Static topology for diagnostics: the I2C addresses we're actually driving,
-    # 1-based by position (board1 = mcp_addrs[0]). e.g. ["0x20", "0x21"].
-    board_addrs = ["0x%02x" % a for a in mcp_addrs]
+def run(shared, queue, device_id):
+    # MCP topology is resolved by core0 (network-first boot); read it below after
+    # the CH9120 link is up. Placeholders until then.
+    n_boards = 0
+    board_addrs = []
     mono = clock.from_utime()
     led = None
     if status_led and cfg.STATUS_LED_ENABLE:
@@ -104,6 +116,24 @@ def run(shared, queue, device_id, mcp_addrs):
     if leased_ip:
         log.info("CH9120 DHCP lease: %s" % ip_display)
     _beat(shared, led, mono)
+
+    # Network-first boot: core0 resolves the MCP board set on its own thread. Wait
+    # (bounded, heartbeat-friendly) for it before HA discovery / diag need the count;
+    # if it never resolves (all chips absent), fall back to the config list so the
+    # network/entities still come up. The bus is never allowed to gate the network.
+    waited = 0
+    while not shared.boards_resolved and waited < cfg.NET_BOARD_WAIT_MS:
+        _beat(shared, led, mono)
+        utime.sleep_ms(50)
+        waited += 50
+    n_boards, board_addrs, _resolved = shared.boards_info()
+    if not _resolved:
+        n_boards = len(cfg.MCP_ADDRESSES)
+        board_addrs = ["0x%02x" % a for a in cfg.MCP_ADDRESSES]
+        log.warn("boards not resolved in %dms; assuming %d from config"
+                 % (cfg.NET_BOARD_WAIT_MS, n_boards))
+    else:
+        log.info("boards from core0: %d (%s)" % (n_boards, ",".join(board_addrs)))
 
     client = MQTTClient(
         cfg.BASE_TOPIC + "_" + device_id,    # e.g. hearth_<id>
@@ -393,6 +423,12 @@ def run(shared, queue, device_id, mcp_addrs):
     reconnects = 0
     last_gesture = ""
     diag_last_ms = 0
+    # Publish-on-change tracking so a fault surfaces in HA immediately (not up to
+    # DIAG_INTERVAL_S later): core0 bumps these versions; we compare each pass.
+    applied_change_ver = shared.mcp_change_version
+    applied_event_ver = shared.event_version
+    last_eth_pub = None
+    last_mqtt_pub = None
 
     # Mirror WARN/ERROR log lines to HA. The sink may fire on EITHER core, so it
     # only stashes the line (a bare list-slot write -- atomic under the GIL); the
@@ -413,6 +449,13 @@ def run(shared, queue, device_id, mcp_addrs):
         utime.sleep_ms(20)
 
     while True:
+        # Arm the watchdog once the network is up (not before -- the multi-second
+        # CH9120/MQTT bring-up must not trip it). From here _beat() feeds it.
+        global _wdt
+        if _wdt is None and cfg.WDT_ENABLE and shared.ready and machine is not None:
+            _wdt = machine.WDT(timeout=cfg.WDT_TIMEOUT_MS)
+            log.info("watchdog armed (core1)")
+
         # ---- (re)connect ----
         if not client.connected:
             shared.set_net(mqtt_ok=False)
@@ -562,31 +605,67 @@ def run(shared, queue, device_id, mcp_addrs):
         shared.set_net(eth_ok=client.connected)
 
         # ---- diagnostics telemetry ----
-        # Strictly lowest priority: only when connected, the gesture queue is fully
-        # drained (button publishes always win the single CH9120 pipe), and at most
-        # every DIAG_INTERVAL_S. One small retained JSON, fire-and-forget -- so it
-        # can never sit in front of an action publish. See SPEC.md sec.5.2.
+        # Strictly lowest priority: only when connected and the gesture queue is
+        # fully drained (button publishes always win the single CH9120 pipe). Sent
+        # every DIAG_INTERVAL_S OR immediately on a health/fault change (core0 bumped
+        # mcp_change_version, or eth/mqtt flipped) so root cause surfaces at once.
+        # One small retained JSON, fire-and-forget -- never in front of an action.
         now_ms = mono.ms()       # clock.Monotonic ms is ever-increasing (wrap-safe)
-        if (cfg.DIAG_ENABLE and client.connected and len(queue) == 0
-                and now_ms - diag_last_ms >= cfg.DIAG_INTERVAL_S * 1000):
-            h = shared.health()                  # snapshot under lock BEFORE building
+        h = shared.health()
+        change_ver = shared.mcp_change_version
+        on_change = (change_ver != applied_change_ver
+                     or h["ethernet"] != last_eth_pub or h["mqtt"] != last_mqtt_pub)
+        due = now_ms - diag_last_ms >= cfg.DIAG_INTERVAL_S * 1000
+        if cfg.DIAG_ENABLE and client.connected and len(queue) == 0 and (due or on_change):
             temp_c = None
             if temp_adc is not None:
                 try:
                     temp_c = diag.rp2040_temp_c(temp_adc.read_u16())
                 except Exception:
                     temp_c = None
+            snap = shared.mcp_diag_snapshot()
+            boards_total = snap.get("boards_total", n_boards)
+            boards_ok = snap.get("boards_ok", 0)
+            health = mcp_health.health_summary(
+                h["ethernet"], h["mqtt"], boards_total, boards_ok)
+            counters = dict(snap.get("counters", {}))
+            counters["reconnects"] = reconnects
+            counters["dropped"] = queue.dropped
             state = diag.build_state(
                 cfg.SW_VERSION, now_ms // 1000, ip_display,
-                h["ethernet"], h["mqtt"], n_boards if h["mcp"] else 0,
+                h["ethernet"], h["mqtt"], boards_total,
                 gc.mem_free(), reconnects, queue.dropped, last_gesture,
-                temp_c=temp_c, board_addrs=board_addrs)
+                temp_c=temp_c, board_addrs=board_addrs,
+                hw=getattr(cfg, "HW_VERSION", None), reset_cause=shared.reset_cause,
+                health=health, boards_total=boards_total, boards_ok=boards_ok,
+                mcp=snap.get("mcp", []), counters=counters,
+                last_fault=snap.get("last_fault"), recent=snap.get("recent", []))
             try:
                 diag.publish_state(client, cfg, device_id, state)
+                diag_last_ms = now_ms
+                applied_change_ver = change_ver
+                last_eth_pub = h["ethernet"]
+                last_mqtt_pub = h["mqtt"]
             except Exception as e:
                 log.error("diag publish failed: %s" % e, every_ms=5000, key="diag")
                 client.connected = False
-            diag_last_ms = now_ms
+
+        # ---- fault event stream (diag/event, non-retained) ----
+        # core0 bumps event_version on each NEW fault; mirror it to a logbook-friendly
+        # event topic. Queue-gated so it never delays an action publish.
+        if (cfg.DIAG_ENABLE and client.connected and len(queue) == 0
+                and shared.event_version != applied_event_ver):
+            ev_ver, fault = shared.take_fault()
+            if fault is not None:
+                try:
+                    diag.publish_event(client, cfg, device_id, fault)
+                    applied_event_ver = ev_ver
+                except Exception as e:
+                    log.error("event publish failed: %s" % e,
+                              every_ms=5000, key="evt")
+                    client.connected = False
+            else:
+                applied_event_ver = ev_ver
 
         # identify: flash the LED white for ~3s after the command (non-blocking;
         # repeated activity pulses keep it visibly blinking to locate the board).

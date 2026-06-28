@@ -40,17 +40,19 @@ work. When SPEC and POC_NOTES agree, that detail is settled — don't re-litigat
 
 ## Concurrency (dual-core) — see SPEC.md §3a
 
-- Core 0 = `input_task` (main thread): MCP IRQ + debounce + detect → queue; owns WDT.
+- Core 0 = `input_task` (main thread): MCP IRQ + debounce + detect → queue. Does NOT own
+  the WDT (an MCP/I²C stall must never reboot); bounded I²C so a dead bus can't wedge it.
   Also live-applies tunable timings when core 1 bumps `SharedState.tune_version`.
 - Core 1 = `net_task` (spawned thread): CH9120 + MQTT + discovery + LED; drains queue;
-  also diagnostics telemetry, the log mirror, and **two-way control** (subscribes to
+  also diagnostics telemetry, the log mirror, **two-way control** (subscribes to
   `…/cmd/#`, handles Restart/Identify/live-tune **after** draining the queue so a
-  command never delays an action publish).
+  command never delays an action publish), and **owns the watchdog** (fed from `_beat`).
 - Cross-core only via `EventQueue` (gestures) + `SharedState` (health + heartbeat +
   live-tunable timings with a version counter).
 - GIL is real: don't expect parallel compute. Both loops must `sleep_ms`-yield.
 - Never block core 0. Network blocking lives on core 1; its waits are chunked so the
-  heartbeat keeps ticking (or the watchdog will reset the board — by design).
+  watchdog (fed from core 1's `_beat`) keeps ticking — if the *network* core wedges,
+  the board resets by design. A core-0/MCP stall does NOT reset (WDT isn't on core 0).
 - Feed the detector/debounce a value from `clock.Monotonic` (wrap-safe), not raw
   `ticks_ms`.
 
