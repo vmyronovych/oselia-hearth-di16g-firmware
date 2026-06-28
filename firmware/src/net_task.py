@@ -482,6 +482,13 @@ def run(shared, queue, device_id):
                         if _st.get("crashes"):
                             _st["crashes"] = 0
                             _ota.write_state(cfg.OTA_STATE_PATH, _st)
+                        # Publish a clean idle ota/state when nothing is pending, so a
+                        # STALE retained state (e.g. an old "applying" from a pre-0.7.2
+                        # boot that never confirmed because its MCP was faulted) can't
+                        # leave the HA update entity stuck "installation in progress". A
+                        # genuinely pending build still confirms via the boot-confirm path.
+                        if not _st.get("pending"):
+                            _ota_publish_state("idle", target=cfg.SW_VERSION, percent=100)
                     except Exception:
                         pass
                 if first_connect or cfg.DISCOVERY_REPUBLISH_ON_RECONNECT:

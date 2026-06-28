@@ -170,6 +170,10 @@ MCP_POLL_MS = 20               # PERIODIC poll of healthy chips, independent of 
                                # wall switches, light I2C load.
 MCP_RECOVERY_AFTER_FAILS = 3   # consecutive failed health checks on a board before
                                # escalating to a bus/reset recovery
+MCP_RESET_SETTLE_MS = 5        # settle delay after a bus reclock / /RESET before
+                               # re-init, so the first I2C writes land on a stable bus
+                               # (a glitched config write can brick inputs; init() also
+                               # read-back-verifies as a backstop)
 MCP_RECOVERY_MIN_INTERVAL_MS = 10000  # min spacing between recovery actions (no
                                # thrash); escalates L1 (I2C reclock) -> L2 (/RESET)
 MCP_RECOVERY_MAX_INTERVAL_MS = 300000  # backoff cap: the recovery interval doubles
