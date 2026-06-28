@@ -158,6 +158,12 @@ I2C_TIMEOUT_US = 50000         # per-transaction hardware timeout (us). Bounds a
                                # board removes the bus pull-ups) so a hung I2C op can
                                # never starve the watchdog. 0/None = port default.
 MCP_HEALTHCHECK_MS = 2000      # how often core0 re-verifies/re-inits a down MCP
+MCP_POLL_MS = 20               # PERIODIC poll of healthy chips, independent of the
+                               # shared INT line. The INT is only a latency
+                               # accelerator; input must never depend solely on a
+                               # single wired-OR IRQ (a missed/quirky INT would
+                               # silently drop presses). ~20 ms = imperceptible for
+                               # wall switches, light I2C load.
 MCP_INT_STUCK_MS = 250         # shared INT held asserted this long despite reading
                                # every healthy chip -> a dead chip is holding the
                                # wired-OR line: count it + trigger recovery

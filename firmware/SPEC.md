@@ -545,9 +545,14 @@ Still to confirm:
   core 0 itself responsive on a bad bus, every I²C transaction is bounded by
   `I2C_TIMEOUT_US` and presence checks probe only the MCP strap range (not a 112-
   address `i2c.scan()`), so a single op fails in ~tens of ms instead of hanging.
-- **MCP fault tolerance + active recovery**: inputs are read whenever the IRQ flag is
-  set **or** the shared INT pin reads asserted, so a dead chip holding the wired-OR INT
-  line can't freeze the healthy chips. A line held past `MCP_INT_STUCK_MS` despite
+- **MCP fault tolerance + active recovery**: healthy chips are read on a **periodic
+  poll** (`MCP_POLL_MS`, ~20 ms) **independent of the INT line** — the shared INT/IRQ is
+  only a latency accelerator, so input never depends on a single wired-OR IRQ (a
+  missed/quirky INT after a recovery can't silently drop presses; HW-found). Reads also
+  fire immediately whenever the IRQ flag is set **or** the INT pin reads asserted, so a
+  dead chip holding the wired-OR line can't freeze the healthy chips. Recovery only runs
+  when a chip is actually failing (a held/odd INT on a healthy bus never `/RESET`s the
+  working chips). A line held past `MCP_INT_STUCK_MS` despite
   reading every healthy chip is recorded as `int_stuck` and triggers recovery. Recovery
   escalates, rate-limited (`MCP_RECOVERY_AFTER_FAILS`, `MCP_RECOVERY_MIN_INTERVAL_MS`):
   **L1** clocks the I²C bus (≤9 SCL pulses + STOP) to free a stuck SDA, then recreates

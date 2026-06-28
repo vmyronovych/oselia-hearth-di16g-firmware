@@ -301,6 +301,7 @@ def run(shared, queue):
 
     _int_flag = True                 # force a first full read
     last_health = mono.ms()
+    last_poll = mono.ms()            # periodic safety poll (INT-independent)
     int_assert_since = None          # mono ms the INT line has been held asserted
     int_stuck_counted = False        # one int_stuck count per stuck episode
 
@@ -360,17 +361,38 @@ def run(shared, queue):
                 shared.set_mcp(_all_ok())
                 shared.set_mcp_diag(_snapshot(now), changed=True)
 
-        # Recovery escalation (rate-limited inside the policy). Cheap when healthy:
-        # decide() returns 0 immediately unless something is failing / stuck.
+        # Recovery escalation (rate-limited inside the policy). Recovery only fires
+        # when a chip is actually FAILING (unreadable). A stuck INT escalates it
+        # faster, but ONLY when something is failing -- a held/quirky INT on an
+        # otherwise-healthy bus must never /RESET the working chips. When all healthy,
+        # decide() still runs to reset the backoff ladder.
         failing = not _all_ok()
-        if failing or int_stuck_pending:
+        if failing:
             fail_streak = 0
             for s in slots:
                 if s.status.fails > fail_streak:
                     fail_streak = s.status.fails
-            level = policy.decide(now, failing, fail_streak, int_stuck_pending)
+            level = policy.decide(now, True, fail_streak, int_stuck_pending)
             if level:
                 _do_recovery(level, now)
+        else:
+            policy.decide(now, False, 0, False)   # healthy -> reset the backoff ladder
+
+        # Periodic safety poll: read every healthy chip on a fixed cadence regardless
+        # of the INT line. The INT-driven read above is only a latency accelerator;
+        # this guarantees presses are captured even if the shared INT stops asserting
+        # (quirk after a recovery, missed edge, etc.) -- input must never depend on a
+        # single shared IRQ. Cheap: a 2-byte read per healthy chip every MCP_POLL_MS.
+        if (now - last_poll) >= cfg.MCP_POLL_MS:
+            last_poll = now
+            edge_any = False
+            for s in slots:
+                if s.status.ok and s.read(now):     # True == down edge
+                    edge_any = True
+                    _fault(now, s.status.code, s.status.detail, s.board)
+            if edge_any:
+                shared.set_mcp(_all_ok())
+                shared.set_mcp_diag(_snapshot(now), changed=True)
 
         # Periodic health/recovery: re-init any chip that's down (hot-add on return).
         if (now - last_health) > cfg.MCP_HEALTHCHECK_MS:
