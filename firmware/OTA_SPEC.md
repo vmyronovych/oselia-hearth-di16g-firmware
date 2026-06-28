@@ -100,10 +100,13 @@ slot, unchanged.
 - On every boot, `boot.py`: if `pending` → `tries += 1`; if `tries > OTA_MAX_BOOT_TRIES`
   (e.g. 2) → **revert**: `active=previous`, clear `pending`, boot the old slot.
   Otherwise boot the (new) active slot.
-- The running app, once it reaches **MQTT online + all-healthy** continuously for
-  `OTA_BOOT_CONFIRM_MS` (e.g. 20 s), calls `ota.confirm()` → clears `pending`,
-  `tries=0`. A build that crashes early, hangs (WDT resets it), or never gets
-  healthy thus auto-reverts on the next reset — unattended, power-loss safe.
+- The running app, once it reaches **network-online** (mqtt + ethernet) continuously
+  for `OTA_BOOT_CONFIRM_MS` (e.g. 20 s), calls `ota.confirm()` → clears `pending`,
+  `tries=0`. A build that crashes early, hangs (WDT resets it), or never reaches the
+  broker thus auto-reverts on the next reset — unattended, power-loss safe.
+  Boot-confirm requires only **network** health, NOT MCP: as of 0.7.x a degraded MCP is
+  a normal running state (reported + recovered, never a reboot), so it must not block a
+  good build from confirming on exactly the units that have an MCP fault.
 
 This reuses existing health signals: `SharedState.ready` + `health()["mqtt"]`
 already tell `net_task` exactly when "online + healthy" holds.
