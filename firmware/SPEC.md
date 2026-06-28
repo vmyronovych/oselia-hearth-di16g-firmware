@@ -116,10 +116,12 @@ delay input sampling or gesture timing.
 
 - **Core 0 — `input_task`** (this is the main thread): I²C + MCP23017 + the MCP INT
   IRQ + debounce + gesture detection. Pushes `(index, gesture)` to the event queue.
-  Stays light, never blocks. Also owns the **watchdog**.
+  Stays light; bounded I²C ops so a dead bus can't wedge it. Does **not** own the
+  watchdog (so an MCP/I²C stall can never reboot the board).
 - **Core 1 — `net_task`** (spawned thread): CH9120 link, MQTT session, HA discovery,
-  draining the event queue → publishing, and the **status LED**. Allowed to block
-  (reconnect waits, etc.).
+  draining the event queue → publishing, the **status LED**, and the **watchdog**
+  (fed from `_beat`). Allowed to block (reconnect waits, etc.); the WDT therefore
+  trips only if the *network* core itself wedges.
 - **Channels between cores**: a thread-safe **`EventQueue`** (gestures, core0→core1)
   and a lock-guarded **`SharedState`** (health flags + a heartbeat). Each core
   `sleep_ms`-yields every pass so the other core gets the GIL.
@@ -535,10 +537,14 @@ Still to confirm:
   An MCP fault (or a wedged bus at boot) can therefore never delay or block the
   network — core 1 waits at most `NET_BOARD_WAIT_MS` for the count, then falls back to
   the config list.
-- **Watchdog** (`machine.WDT`, ≤8388 ms): core 0 feeds it, but **only while core 1's
-  heartbeat is fresh** (`CORE1_STALL_MS`) — so a hung *either* core forces a reset.
-  Armed only after `net_task` signals `ready`, so the multi-second bring-up can't
-  trip a spurious reset. An MCP fault alone **never** reboots the board.
+- **Watchdog** (`machine.WDT`, ≤8388 ms): **owned and fed by core 1** (`net_task`,
+  from `_beat`), so it guards only the *network* core. An MCP/I²C stall on core 0 —
+  even a fully wedged or unpowered bus — **never** reboots the board; it is reported
+  and recovered instead (this was a real requirement). Armed only after `net_task`
+  signals `ready`, so the multi-second bring-up can't trip a spurious reset. To keep
+  core 0 itself responsive on a bad bus, every I²C transaction is bounded by
+  `I2C_TIMEOUT_US` and presence checks probe only the MCP strap range (not a 112-
+  address `i2c.scan()`), so a single op fails in ~tens of ms instead of hanging.
 - **MCP fault tolerance + active recovery**: inputs are read whenever the IRQ flag is
   set **or** the shared INT pin reads asserted, so a dead chip holding the wired-OR INT
   line can't freeze the healthy chips. A line held past `MCP_INT_STUCK_MS` despite

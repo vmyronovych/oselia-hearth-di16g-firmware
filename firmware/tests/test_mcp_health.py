@@ -142,6 +142,27 @@ def test_policy_note_recovered_resets_ladder():
     assert p.decide(2000, True, 3, False) == 1         # back to L1 after recovery
 
 
+def test_policy_exponential_backoff():
+    # Interval doubles after each action (1000 -> 2000 -> 4000), capped at max.
+    p = mh.RecoveryPolicy(3, 1000, max_interval_ms=4000)
+    assert p.decide(0, True, 3, False) == 1            # action @0, next interval 2000
+    assert p.decide(1500, True, 3, False) == 0         # 1500 < 2000 -> wait
+    assert p.decide(2000, True, 3, False) == 2         # action @2000, next interval 4000
+    assert p.decide(5000, True, 3, False) == 0         # 3000 since < 4000 -> wait
+    assert p.decide(6000, True, 3, False) == 2         # action @6000 (4000 elapsed)
+    assert p.decide(9999, True, 3, False) == 0         # capped at 4000, still waiting
+
+
+def test_policy_backoff_resets_when_healthy():
+    p = mh.RecoveryPolicy(3, 1000, max_interval_ms=8000)
+    p.decide(0, True, 3, False)                        # L1 @0, interval -> 2000
+    p.decide(2000, True, 3, False)                     # L2 @2000, interval -> 4000
+    assert p.decide(3000, False, 0, False) == 0        # healthy -> backoff reset to min
+    assert p.decide(3000, True, 3, False) == 1         # prompt L1 again (min restored)
+    assert p.decide(3500, True, 3, False) == 0         # 500 < 2000 -> wait
+    assert p.decide(5000, True, 3, False) == 2         # 2000 elapsed -> L2
+
+
 def _all_tests():
     return [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 

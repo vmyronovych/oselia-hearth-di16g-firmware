@@ -153,6 +153,10 @@ DISCOVERY_REPUBLISH_ON_RECONNECT = True
 
 # I2C resilience + MCP recovery (an MCP fault must never freeze inputs or reboot)
 I2C_RETRIES = 3                # retry count for MCP reads/writes
+I2C_TIMEOUT_US = 50000         # per-transaction hardware timeout (us). Bounds a core0
+                               # stall on a dead/floating bus (e.g. an unpowered MCP
+                               # board removes the bus pull-ups) so a hung I2C op can
+                               # never starve the watchdog. 0/None = port default.
 MCP_HEALTHCHECK_MS = 2000      # how often core0 re-verifies/re-inits a down MCP
 MCP_INT_STUCK_MS = 250         # shared INT held asserted this long despite reading
                                # every healthy chip -> a dead chip is holding the
@@ -162,6 +166,11 @@ MCP_RECOVERY_AFTER_FAILS = 3   # consecutive failed health checks on a board bef
                                # bypasses this gate)
 MCP_RECOVERY_MIN_INTERVAL_MS = 10000  # min spacing between recovery actions (no
                                # thrash); escalates L1 (I2C reclock) -> L2 (/RESET)
+MCP_RECOVERY_MAX_INTERVAL_MS = 300000  # backoff cap: the recovery interval doubles
+                               # after each action up to this (5 min). A persistently
+                               # absent chip must not keep pulsing the SHARED /RESET
+                               # line (which would reset the HEALTHY boards too); the
+                               # 2 s health-check still auto-recovers a returning chip
 NET_BOARD_WAIT_MS = 3000       # core1 waits this long for core0 to resolve the board
                                # set before its first discovery/diag, then falls back
                                # to the config list (network is never gated on I2C)

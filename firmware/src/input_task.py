@@ -70,11 +70,20 @@ def release_mcp_reset():
 
 
 def _make_i2c():
-    """Create the hardware I2C peripheral (no /RESET pulse)."""
-    return machine.I2C(cfg.I2C_ID,
-                       sda=machine.Pin(cfg.PIN_I2C_SDA),
-                       scl=machine.Pin(cfg.PIN_I2C_SCL),
-                       freq=cfg.I2C_FREQ)
+    """Create the hardware I2C peripheral (no /RESET pulse). A bounded `timeout` caps
+    how long any single transaction can block on a dead/floating bus -- an unpowered
+    MCP board removes the bus pull-ups, and without a timeout a hung op stalls core0
+    for seconds. Fall back if the port build doesn't accept `timeout`."""
+    sda = machine.Pin(cfg.PIN_I2C_SDA)
+    scl = machine.Pin(cfg.PIN_I2C_SCL)
+    to = getattr(cfg, "I2C_TIMEOUT_US", 0)
+    if to:
+        try:
+            return machine.I2C(cfg.I2C_ID, sda=sda, scl=scl, freq=cfg.I2C_FREQ,
+                               timeout=to)
+        except (TypeError, ValueError):
+            pass
+    return machine.I2C(cfg.I2C_ID, sda=sda, scl=scl, freq=cfg.I2C_FREQ)
 
 
 def build_i2c():
@@ -108,26 +117,35 @@ def _bus_recover():
     return _make_i2c()
 
 
-def _resolve_addresses(i2c):
-    """Scan the bus (unless pinned) and return the MCP address list to drive.
+def _probe(i2c, addr):
+    """Single-address ACK check, bounded by the I2C timeout. Used instead of
+    i2c.scan() (which probes 112 addresses and can stall core0 for seconds on a
+    dead/floating bus) -- we only ever care about the MCP strap range anyway."""
+    try:
+        i2c.readfrom(addr, 1)
+        return True
+    except Exception:
+        return False
 
-    Bounded retry because satellite chips may power up just after the MCU. Falls
-    back to cfg.MCP_ADDRESSES inside select_addresses if a scan finds nothing.
+
+def _resolve_addresses(i2c):
+    """Probe the MCP strap range (unless pinned) and return the address list to drive.
+
+    Probes only 0x20..0x27 individually (not a full 112-address bus scan), with bounded
+    retry because satellite chips may power up just after the MCU. Falls back to
+    cfg.MCP_ADDRESSES inside select_addresses if nothing answers.
     """
     import mcp_select
     if not cfg.MCP_AUTODISCOVER:
         return list(cfg.MCP_ADDRESSES)
-    scanned = []
+    found = []
     for _ in range(5):
-        try:
-            scanned = list(i2c.scan())
-        except Exception:
-            scanned = []
-        if any(mcp_select.MCP_ADDR_MIN <= a <= mcp_select.MCP_ADDR_MAX
-               for a in scanned):
+        found = [a for a in range(mcp_select.MCP_ADDR_MIN, mcp_select.MCP_ADDR_MAX + 1)
+                 if _probe(i2c, a)]
+        if found:
             break
         utime.sleep_ms(200)
-    return mcp_select.select_addresses(scanned, cfg.MCP_ADDRESSES,
+    return mcp_select.select_addresses(found, cfg.MCP_ADDRESSES,
                                        cfg.MCP_AUTODISCOVER)
 
 
@@ -207,8 +225,9 @@ def run(shared, queue):
 
     counters = {"int_stuck": 0, "bus_recoveries": 0, "mcp_resets": 0}
     ring = FaultRing(cfg.DIAG_FAULT_RING)
-    policy = mcp_health.RecoveryPolicy(cfg.MCP_RECOVERY_AFTER_FAILS,
-                                       cfg.MCP_RECOVERY_MIN_INTERVAL_MS)
+    policy = mcp_health.RecoveryPolicy(
+        cfg.MCP_RECOVERY_AFTER_FAILS, cfg.MCP_RECOVERY_MIN_INTERVAL_MS,
+        getattr(cfg, "MCP_RECOVERY_MAX_INTERVAL_MS", None))
 
     def _snapshot(now_ms):
         boards_ok = 0
@@ -281,10 +300,14 @@ def run(shared, queue):
     applied_tune_ver = shared.tune_version    # live-tune: re-apply when core1 bumps it
 
     _int_flag = True                 # force a first full read
-    wdt = None
     last_health = mono.ms()
     int_assert_since = None          # mono ms the INT line has been held asserted
     int_stuck_counted = False        # one int_stuck count per stuck episode
+
+    # NOTE: core0 does NOT own the watchdog. The WDT is fed by core1 (net_task) so an
+    # MCP/I2C stall on THIS core can never reboot the board -- a hung bus is reported
+    # and recovered, never reset (SPEC.md sec.12). Bounded I2C ops keep this loop
+    # responsive regardless. core1 reboots only if the *network* core itself wedges.
 
     while True:
         now = mono.ms()
@@ -298,10 +321,6 @@ def run(shared, queue):
                 d.debounce_ms = db
             applied_tune_ver = ver
             log.info("tunables: long=%d double=%d debounce=%d" % (lm, dg, db))
-
-        if wdt is None and cfg.WDT_ENABLE and shared.ready:
-            wdt = machine.WDT(timeout=cfg.WDT_TIMEOUT_MS)
-            log.info("watchdog armed")
 
         # Read whenever the IRQ fired OR the shared INT line reads asserted. The
         # asserted-level check is what makes a missed edge / a line held by a dead
@@ -376,14 +395,5 @@ def run(shared, queue):
                 if g is not None:
                     queue.put((idx, g))
                     log.debug("gesture idx%d=%s" % (idx, g))
-
-        # Feed watchdog only while core1 is alive.
-        if wdt is not None:
-            if utime.ticks_diff(utime.ticks_ms(), shared.core1_heartbeat) \
-                    < cfg.CORE1_STALL_MS:
-                wdt.feed()
-            else:
-                log.error("core1 stalled; withholding WDT feed",
-                          every_ms=2000, key="core1stall")
 
         utime.sleep_ms(2)            # yield (releases GIL so core1 runs)

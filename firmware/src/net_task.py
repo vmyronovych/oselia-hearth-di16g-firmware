@@ -30,10 +30,21 @@ try:
 except Exception:
     status_led = None
 
+# The hardware watchdog lives on CORE 1 (the network task), not core 0. Rationale
+# (SPEC.md sec.12 + user requirement): an MCP/I2C stall on core 0 must NEVER reboot
+# the board -- a dead bus is reported and recovered, not reset. The WDT therefore
+# guards only the *network* core: it is fed from _beat() (called every core1 pass and
+# during every chunked blocking wait), so it trips only if net_task itself wedges.
+_wdt = None
+
 
 def _beat(shared, led, mono):
-    """Update heartbeat + sync LED subsystem states from shared + render once."""
+    """Feed the watchdog + sync LED subsystem states from shared + render once.
+    Called every core1 loop pass and inside every blocking wait, so the WDT stays fed
+    as long as the network core is alive."""
     shared.beat(utime.ticks_ms())
+    if _wdt is not None:
+        _wdt.feed()
     if led is not None:
         if shared.ready:
             led.boot_done()
@@ -438,6 +449,13 @@ def run(shared, queue, device_id):
         utime.sleep_ms(20)
 
     while True:
+        # Arm the watchdog once the network is up (not before -- the multi-second
+        # CH9120/MQTT bring-up must not trip it). From here _beat() feeds it.
+        global _wdt
+        if _wdt is None and cfg.WDT_ENABLE and shared.ready and machine is not None:
+            _wdt = machine.WDT(timeout=cfg.WDT_TIMEOUT_MS)
+            log.info("watchdog armed (core1)")
+
         # ---- (re)connect ----
         if not client.connected:
             shared.set_net(mqtt_ok=False)

@@ -155,18 +155,27 @@ def reset_cause_name(cause, names):
 class RecoveryPolicy:
     """Decide whether to run an MCP recovery action this tick, and at what level.
 
-    Rate-limited so we never thrash the bus/reset line. Escalates L1 (I2C bus
-    clocking) -> L2 (/RESET pulse) across attempts: the first eligible attempt is
-    L1; if a chip is still failing at the next eligible attempt, L2; thereafter L2.
-    A stuck-INT observation bypasses the consecutive-fail gate (it demands prompt
-    action), but is still rate-limited.
+    Rate-limited with EXPONENTIAL BACKOFF so we never thrash the bus/reset line.
+    Escalates L1 (I2C bus clocking) -> L2 (/RESET pulse) across attempts: the first
+    eligible attempt is L1; if a chip is still failing at the next eligible attempt,
+    L2; thereafter L2. A stuck-INT observation bypasses the consecutive-fail gate (it
+    demands prompt action), but is still rate-limited.
+
+    The interval starts at min_interval_ms and DOUBLES after each action up to
+    max_interval_ms, then resets when a board comes back healthy. This matters on a
+    multi-board rig: L2 pulses the SHARED /RESET line, so a persistently-absent chip
+    must not keep resetting the HEALTHY boards every interval -- the passive 2 s
+    health-check still re-inits a returning chip regardless, so backing off loses
+    nothing. See SPEC.md sec.12 and input_task.
     """
 
-    def __init__(self, after_fails, min_interval_ms):
+    def __init__(self, after_fails, min_interval_ms, max_interval_ms=None):
         self.after_fails = after_fails
         self.min_interval_ms = min_interval_ms
+        self.max_interval_ms = max(min_interval_ms, max_interval_ms or min_interval_ms)
         self._last_ms = None       # ms of the last recovery action (None=never)
         self._last_level = 0       # 0/1/2 -- last level run while the fault persists
+        self._interval = min_interval_ms   # current backoff interval
 
     def decide(self, now_ms, failing, fail_streak, int_stuck):
         """failing: any board not ok. fail_streak: max consecutive health-check
@@ -174,17 +183,21 @@ class RecoveryPolicy:
         Returns 0 (do nothing), 1 (bus recovery) or 2 (hardware reset)."""
         if not failing and not int_stuck:
             self._last_level = 0           # healthy again -> reset the ladder
+            self._interval = self.min_interval_ms
             return 0
         if not int_stuck and fail_streak < self.after_fails:
             return 0                       # not bad enough yet (and no stuck INT)
         if self._last_ms is not None and \
-                (now_ms - self._last_ms) < self.min_interval_ms:
-            return 0                       # rate-limited
+                (now_ms - self._last_ms) < self._interval:
+            return 0                       # rate-limited (with backoff)
         level = 1 if self._last_level < 1 else 2
         self._last_ms = now_ms
         self._last_level = level
+        self._interval = min(self._interval * 2, self.max_interval_ms)  # back off
         return level
 
     def note_recovered(self):
-        """Call when the bus is healthy again so the next fault starts at L1."""
+        """Call when the bus is healthy again so the next fault starts at L1 and the
+        backoff interval is reset."""
         self._last_level = 0
+        self._interval = self.min_interval_ms

@@ -53,9 +53,14 @@ class MCP23017:
         raise last
 
     def present(self):
-        """True if the MCP ACKs on the bus (for health checks / re-init)."""
+        """True if the MCP ACKs a quick single-address probe (for health checks /
+        re-init). Deliberately NOT i2c.scan(): scanning all 112 addresses can stall
+        the caller (core0) for seconds on a dead/floating bus -- e.g. an unpowered
+        satellite removes the bus pull-ups -- which previously starved the watchdog.
+        A one-address read, bounded by the I2C timeout, fails fast instead."""
         try:
-            return self.addr in self.i2c.scan()
+            self.i2c.readfrom(self.addr, 1)
+            return True
         except Exception:
             return False
 
