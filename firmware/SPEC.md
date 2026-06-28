@@ -250,6 +250,18 @@ parameters in the Home Assistant app with no extra service. Built in `diag.py`
 | `dropped` | sensor (total_increasing) | event-queue drop counter |
 | `last` | sensor | last published gesture, e.g. `b1/in3 single` |
 
+**Structured root-cause observability (fw ≥ 0.7.0).** `diag/state` is extended with
+`hw`, `reset_cause` (`power_on`/`wdt`/`soft`/…), `health` (`ok`/`degraded`/`mcp_fault`/
+`net_fault`), `boards_total`/`boards_ok`, a per-board `mcp[]` array (`{board,addr,ok,
+code,detail,fails,last_ok_s,recoveries}`), a `counters` block (`int_stuck`,
+`bus_recoveries`, `mcp_resets`, `reconnects`, `dropped`), and a `last_fault` + bounded
+`recent[]` fault ring (the timeline). A non-retained `…/diag/event` topic carries each
+fault record the instant it transitions (HA logbook). `code` values come from the stable
+taxonomy in `mcp_health.py`. In **oselia** mode the OSELIA integration renders these as a
+Diagnostics sensor, per-board MCP entities, counters, and a fault `event`; full schema in
+`homeassistant/INTEGRATION_SPEC.md`. The state is republished **immediately** on a
+health/fault change (not only every `DIAG_INTERVAL_S`), still queue-gated.
+
 **Latency guarantee (critical):** diagnostics must never delay a button publish.
 The single CH9120 TCP pipe is shared, so the publish is gated in `net_task` to the
 **lowest priority**: it is emitted only when the gesture queue is **fully drained**
@@ -518,10 +530,25 @@ Still to confirm:
 
 ## 12. Industrial-grade robustness (implemented)
 
+- **Network-first boot**: core 1 (CH9120 + MQTT) is spawned **before** any I²C work;
+  core 0 builds the bus, resolves the board set, and publishes it via `SharedState`.
+  An MCP fault (or a wedged bus at boot) can therefore never delay or block the
+  network — core 1 waits at most `NET_BOARD_WAIT_MS` for the count, then falls back to
+  the config list.
 - **Watchdog** (`machine.WDT`, ≤8388 ms): core 0 feeds it, but **only while core 1's
   heartbeat is fresh** (`CORE1_STALL_MS`) — so a hung *either* core forces a reset.
   Armed only after `net_task` signals `ready`, so the multi-second bring-up can't
-  trip a spurious reset.
+  trip a spurious reset. An MCP fault alone **never** reboots the board.
+- **MCP fault tolerance + active recovery**: inputs are read whenever the IRQ flag is
+  set **or** the shared INT pin reads asserted, so a dead chip holding the wired-OR INT
+  line can't freeze the healthy chips. A line held past `MCP_INT_STUCK_MS` despite
+  reading every healthy chip is recorded as `int_stuck` and triggers recovery. Recovery
+  escalates, rate-limited (`MCP_RECOVERY_AFTER_FAILS`, `MCP_RECOVERY_MIN_INTERVAL_MS`):
+  **L1** clocks the I²C bus (≤9 SCL pulses + STOP) to free a stuck SDA, then recreates
+  the peripheral; **L2** pulses the MCP `/RESET` line (GP9). Per-board health, error
+  codes, and `int_stuck`/`bus_recoveries`/`mcp_resets` counters are surfaced in
+  `diag/state` + `diag/event` (§5.2). Pure decision logic lives in host-tested
+  `mcp_health.py`.
 - **Reconnect with exponential backoff** (`RECONNECT_BACKOFF_MIN/MAX_MS`), LWT
   (`offline`), availability `online`, and discovery republish on reconnect. Backoff
   waits are chunked so the heartbeat keeps ticking during them.
@@ -529,7 +556,7 @@ Still to confirm:
   `PING_RESPONSE_TIMEOUT_MS`, the session is declared dead and rebuilt. CONNACK
   return code is validated.
 - **I²C resilience**: bounded retries on every MCP read/write; periodic presence
-  check; auto re-init when the device returns.
+  check; auto re-init when the device returns; bus/`/RESET` recovery (above).
 - **Bounded event queue** with drop-oldest + dropped counter (newest button activity
   always survives a backlog); graceful degradation — detection continues offline and
   flushes on reconnect.

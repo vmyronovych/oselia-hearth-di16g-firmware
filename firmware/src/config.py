@@ -101,7 +101,7 @@ DEVICE_ID = None               # None -> derive from unique_id() last 6 hex
 DEVICE_NAME = "Hearth"
 DEVICE_MODEL = "Hearth (DI16-G)"
 DEVICE_MANUFACTURER = "OSELIA"
-SW_VERSION = "0.6.0"
+SW_VERSION = "0.7.0"
 HW_VERSION = "DI16-G"                   # board model (shown as Hardware in HA)
 PROJECT_URL = "https://github.com/vmyronovych/oselia-hearth-di16g-firmware"  # HA discovery origin
 
@@ -151,9 +151,20 @@ RECONNECT_BACKOFF_MIN_MS = 1000    # first retry delay
 RECONNECT_BACKOFF_MAX_MS = 30000   # cap
 DISCOVERY_REPUBLISH_ON_RECONNECT = True
 
-# I2C resilience
+# I2C resilience + MCP recovery (an MCP fault must never freeze inputs or reboot)
 I2C_RETRIES = 3                # retry count for MCP reads/writes
-MCP_HEALTHCHECK_MS = 2000      # how often core0 re-verifies the MCP responds
+MCP_HEALTHCHECK_MS = 2000      # how often core0 re-verifies/re-inits a down MCP
+MCP_INT_STUCK_MS = 250         # shared INT held asserted this long despite reading
+                               # every healthy chip -> a dead chip is holding the
+                               # wired-OR line: count it + trigger recovery
+MCP_RECOVERY_AFTER_FAILS = 3   # consecutive failed health checks on a board before
+                               # escalating to a bus/reset recovery (a stuck INT
+                               # bypasses this gate)
+MCP_RECOVERY_MIN_INTERVAL_MS = 10000  # min spacing between recovery actions (no
+                               # thrash); escalates L1 (I2C reclock) -> L2 (/RESET)
+NET_BOARD_WAIT_MS = 3000       # core1 waits this long for core0 to resolve the board
+                               # set before its first discovery/diag, then falls back
+                               # to the config list (network is never gated on I2C)
 
 # Logging: 0=ERROR 1=WARN 2=INFO 3=DEBUG
 LOG_LEVEL = 2
@@ -169,6 +180,8 @@ LOG_LEVEL = 2
 # via the wizard (`provision.py --no-diag` -> site.json "diag": false).
 DIAG_ENABLE = True
 DIAG_INTERVAL_S = 10           # how often to refresh the diag/state snapshot
+DIAG_FAULT_RING = 16           # recent[] fault-history length in the diag blob (one
+                               # retained export then carries the fault timeline)
 # Two-way control: subscribe to <base>/<id>/cmd/# and expose HA `button` entities
 # (Restart, Identify). Commands are handled on core1 after the gesture queue is
 # drained, so they never delay a button publish.

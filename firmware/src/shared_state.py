@@ -1,12 +1,30 @@
 """Cross-core shared health/status, guarded by a lock.
 
-core0 (input) writes: mcp_ok.
-core1 (network) writes: eth_ok, mqtt_ok, ready, and a periodic heartbeat tick.
+core0 (input) writes: mcp_ok, the resolved board set, the per-board MCP diagnostic
+snapshot (built from mcp_health records), and fault records.
+core1 (network) writes: eth_ok, mqtt_ok, ready, and a periodic heartbeat tick; it
+reads the MCP snapshot to publish diag/state + diag/event.
 core0 reads the heartbeat to gate the watchdog; core1 reads mcp_ok to drive the LED.
 
 Single-word reads/writes are effectively atomic on RP2040, but grouped updates go
 through the lock for correctness. The lock is injected for host testing.
+
+Observability handshake (publish-on-change): core0 bumps `mcp_change_version` on any
+board health edge so core1 publishes diag/state immediately, and bumps
+`event_version` + stows `last_fault` on each NEW fault so core1 publishes diag/event.
+Both are plain ints (atomic read on RP2040); core1 compares them each pass.
 """
+
+
+def _empty_mcp_diag():
+    return {
+        "mcp": [],
+        "boards_total": 0,
+        "boards_ok": 0,
+        "counters": {"int_stuck": 0, "bus_recoveries": 0, "mcp_resets": 0},
+        "last_fault": None,
+        "recent": [],
+    }
 
 
 class _NullLock:
@@ -33,10 +51,59 @@ class SharedState:
         self.tune_long_ms = 0
         self.tune_double_gap_ms = 0
         self.tune_debounce_ms = 0
+        # Resolved MCP topology (core0 writes after the boot scan; core1 waits on
+        # boards_resolved before its first HA discovery / diag publish).
+        self.n_boards = 0
+        self.board_addrs = []            # ["0x20", ...] in board order
+        self.boards_resolved = False
+        # Per-board MCP diagnostic snapshot (built by core0; serialised by core1).
+        self.mcp_diag = _empty_mcp_diag()
+        self.mcp_change_version = 0       # bumped on a board health edge -> publish now
+        self.event_version = 0            # bumped on each new fault -> publish diag/event
+        self.last_fault = None            # the latest fault record (for diag/event)
+        self.reset_cause = "unknown"      # set once at boot from machine.reset_cause()
 
     def set_mcp(self, ok):
         with self._lock:
             self.mcp_ok = ok
+
+    # ---- MCP topology + per-board diagnostics (core0 writes, core1 reads) ----
+    def set_boards(self, n, addrs):
+        """Publish the resolved board count/addresses; unblocks core1's discovery."""
+        with self._lock:
+            self.n_boards = n
+            self.board_addrs = list(addrs)
+            self.boards_resolved = True
+
+    def boards_info(self):
+        with self._lock:
+            return self.n_boards, list(self.board_addrs), self.boards_resolved
+
+    def set_reset_cause(self, name):
+        self.reset_cause = name           # single write at boot; plain assignment
+
+    def set_mcp_diag(self, snapshot, changed=False):
+        """Store the per-board diagnostic snapshot built by core0. `changed=True`
+        (a board health edge) bumps the change version so core1 publishes now."""
+        with self._lock:
+            self.mcp_diag = snapshot
+            if changed:
+                self.mcp_change_version += 1
+
+    def mcp_diag_snapshot(self):
+        with self._lock:
+            return self.mcp_diag
+
+    def note_fault(self, record):
+        """Stow the latest fault record + bump the event version (core1 publishes
+        diag/event when it sees the bump)."""
+        with self._lock:
+            self.last_fault = record
+            self.event_version += 1
+
+    def take_fault(self):
+        with self._lock:
+            return self.event_version, self.last_fault
 
     def set_net(self, eth_ok=None, mqtt_ok=None):
         with self._lock:

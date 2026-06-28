@@ -28,29 +28,85 @@ def state_topic(cfg, device_id):
 
 
 def build_state(fw, uptime_s, ip, eth, mqtt, boards, mem_free,
-                reconnects, dropped, last, temp_c=None, board_addrs=None):
-    """Assemble the small telemetry dict. Pure -- caller json.dumps it.
+                reconnects, dropped, last, temp_c=None, board_addrs=None,
+                hw=None, reset_cause=None, health=None, boards_total=None,
+                boards_ok=None, mcp=None, counters=None, last_fault=None,
+                recent=None):
+    """Assemble the telemetry dict. Pure -- caller json.dumps it.
 
-    `last` is a short human string for the most recent gesture (e.g.
-    "b1/in3 single") or "" if none has been published yet. `temp_c` is the RP2040
-    die temperature (None if unavailable -> the HA entity shows unknown).
-    `boards` is the live-ish count (0 when the MCPs aren't responding); `board_addrs`
-    is the static list of driven I2C addresses (topology), e.g. ["0x20", "0x21"].
+    The first ten positional args + temp_c/board_addrs are the original, stable
+    contract (older HA entities still read them). The keyword args carry the
+    structured root-cause observability (schema in INTEGRATION_SPEC.md):
+      hw           -- hardware version string.
+      reset_cause  -- "power_on"|"wdt"|"soft"|"unknown" (why we last booted).
+      health       -- "ok"|"degraded"|"mcp_fault"|"net_fault" (HA Diagnostics state).
+      boards       -- resolved board count (input entities exist for all of them).
+      boards_ok    -- how many are currently responding.
+      mcp          -- per-board list: {board,addr,ok,code,detail,fails,last_ok_s,
+                      recoveries} (the diag `mcp[]`).
+      counters     -- {int_stuck,bus_recoveries,mcp_resets,reconnects,dropped}.
+      last_fault   -- most recent fault record, or None.
+      recent       -- bounded ring of recent fault records (the timeline).
+    `last` is a short human string for the most recent gesture; `temp_c` is the
+    RP2040 die temperature (None -> HA shows unknown).
     """
     return {
         "fw": fw,
+        "hw": hw,
         "uptime_s": uptime_s,
         "ip": ip,
+        "reset_cause": reset_cause if reset_cause is not None else "unknown",
+        "health": health if health is not None else "ok",
         "eth": bool(eth),
         "mqtt": bool(mqtt),
         "boards": boards,
+        "boards_total": boards_total if boards_total is not None else boards,
+        "boards_ok": boards_ok if boards_ok is not None else boards,
         "board_addrs": board_addrs if board_addrs is not None else [],
+        "mcp": mcp if mcp is not None else [],
+        "counters": counters if counters is not None else {},
+        "last_fault": last_fault,
+        "recent": recent if recent is not None else [],
         "mem_free": mem_free,
         "reconnects": reconnects,
         "dropped": dropped,
         "last": last,
         "temp_c": temp_c,
     }
+
+
+# Reset-cause: pure int->name map (the read of machine.reset_cause() is hardware,
+# done in main.py and passed here). Unknown / unsupported port -> "unknown".
+def reset_cause_name(cause, names):
+    if cause is None:
+        return "unknown"
+    return names.get(cause, "unknown")
+
+
+# ---- fault event stream (diag/event, NON-retained) ----
+def event_topic(cfg, device_id):
+    """Non-retained per-fault stream so HA gets a real-time timeline (logbook),
+    not just the latest retained snapshot."""
+    return ha.base(cfg, device_id) + "/diag/event"
+
+
+def build_event(record):
+    """Pure passthrough/normaliser for a fault record -> diag/event payload.
+    `record` is {ts, component, code, detail[, board]}."""
+    out = {
+        "ts": record.get("ts", 0),
+        "component": record.get("component", ""),
+        "code": record.get("code", ""),
+        "detail": record.get("detail", ""),
+    }
+    if record.get("board") is not None:
+        out["board"] = record["board"]
+    return out
+
+
+def publish_event(client, cfg, device_id, record):
+    client.publish(event_topic(cfg, device_id), json.dumps(build_event(record)),
+                   retain=False)
 
 
 def rp2040_temp_c(raw_u16):
