@@ -557,11 +557,14 @@ def reset_board(port):
 
 
 def _disable_app(port):
-    """Quiesce a running unit before filesystem writes. The firmware owns a watchdog
-    (core 0), which resets the board mid-raw-REPL when mpremote interrupts it -- so
+    """Quiesce a running unit before filesystem writes. A running unit often can't be
+    broken into over USB (the firmware's dual-core loop doesn't keep the USB CDC
+    serviced, and historically a watchdog could hard-reset the board mid-break-in) -- so
     `fs cp` flakes with 'could not enter raw repl'. Park the auto-run entry (/boot.py on
     an OTA-layout board, else /main.py) and hard-reset in ONE exec; the board reboots to
-    a bare REPL (no app, no watchdog) where writes are reliable.
+    a bare REPL (no app, no watchdog) where writes are reliable. NOTE: as of fw 0.7.0 the
+    watchdog lives on core 1; the cooperative maintenance quiesce (below) is preferred
+    and avoids host break-in entirely.
 
     Self-verifying: after each attempt we read the FS back -- on a bare REPL no auto-run
     entry remains; if the firmware is still running the read itself flakes, so we retry.
@@ -850,10 +853,11 @@ def flash_micropython(args, port, wipe=False):
     if not newport:
         die("Board didn't re-appear as MicroPython after flashing -- re-plug and retry.")
     # A non-wipe UF2 flash preserves littlefs: if a prior OTA layout is on the board
-    # (/boot.py + /slots/a) it boots STRAIGHT into the watchdog-guarded firmware, whose
-    # hardware WDT resets the board whenever mpremote interrupts it -- defeating the version
-    # read and file writes that follow. Park the app to a bare, watchdog-free REPL now (same
-    # mechanism the write path uses). A wiped board is already bare, so skip it there.
+    # (/boot.py + /slots/a) it boots STRAIGHT into the running firmware, which often can't
+    # be broken into over USB (dual-core loop doesn't service the USB CDC; a watchdog may
+    # also reset it) -- defeating the version read and file writes that follow. Park the
+    # app to a bare REPL now (same mechanism the write path uses). A wiped board is already
+    # bare, so skip it there.
     if not wipe:
         _disable_app(newport)
     print("Flashed MicroPython %s." % (read_mpy_version(newport) or "?"))
@@ -865,8 +869,8 @@ def ensure_micropython(args, port):
     mismatch (WIPED, so it can't wedge). Returns the port to keep using.
 
     CRITICAL: a board that ENUMERATES as a MicroPython device is never flashed just because
-    the version didn't read. On this board a running unit can't always be quiesced (the
-    watchdog hard-resets it when the wizard breaks in), so read_mpy_version flakes to None --
+    the version didn't read. On this board a running unit can't always be quiesced (its USB
+    CDC isn't reliably available while the firmware runs), so read_mpy_version flakes to None --
     and a needless non-wipe reflash then preserves the auto-running firmware and WEDGES USB on
     the cold boot (the board vanishes; see firmware boot-wedge notes). So: a None read on a
     confirmed-MicroPython board (polled, since it may be mid-re-enumeration) => skip the flash
