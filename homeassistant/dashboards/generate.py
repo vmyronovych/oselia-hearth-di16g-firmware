@@ -159,6 +159,28 @@ def feed_error_note(fw_entity):
     }
 
 
+def fault_timeline_card(diag_entity):
+    """A 'Recent faults' markdown card with the ACTUAL codes + details.
+
+    HA's logbook for an `event` entity only renders a generic "detected an event"
+    (no event_type, no attributes), so instead render the Diagnostics sensor's
+    `last_fault` + `recent[]` fault ring (each {code, detail, board}) -- newest first.
+    """
+    d = diag_entity
+    content = (
+        "{% set lf = state_attr('" + d + "', 'last_fault') %}"
+        "{% if lf %}**Now:** `{{ lf.code }}`"
+        "{% if lf.get('board') is not none %} · board {{ lf.board }}{% endif %}"
+        " — {{ lf.detail }}\n\n{% endif %}"
+        "{% set r = state_attr('" + d + "', 'recent') or [] %}"
+        "{% if r %}{% for f in (r[-12:] | reverse) %}"
+        "- `{{ f.code }}`{% if f.get('board') is not none %} (b{{ f.board }}){% endif %}"
+        " — {{ f.detail }}\n"
+        "{% endfor %}{% else %}_No faults recorded._{% endif %}"
+    )
+    return {"type": "markdown", "title": "Recent faults", "content": content}
+
+
 def build_view(gw_id, friendly, by_role, inputs_by_board, mcp_by_board, logo, broker):
     """One Sections view for a single gateway."""
     status_cards = []
@@ -178,9 +200,13 @@ def build_view(gw_id, friendly, by_role, inputs_by_board, mcp_by_board, logo, br
     for key, label in STATUS_SENSORS:
         if key in by_role:
             status_cards.append(tile(by_role[key], label))
-    if "fault" in by_role:                       # fault timeline (HA logbook)
-        status_cards.append({"type": "logbook", "title": "Recent faults",
-                             "entities": [by_role["fault"]]})
+    # Fault timeline with real codes/details (the HA logbook for an event entity only
+    # shows a generic "detected an event"). Prefer the Diagnostics-attribute markdown;
+    # fall back to an event tile (shows the latest code as its state) if it's missing.
+    if "diagnostics" in by_role:
+        status_cards.append(fault_timeline_card(by_role["diagnostics"]))
+    elif "fault" in by_role:
+        status_cards.append(tile(by_role["fault"], "Last fault"))
 
     sections = [{"type": "grid", "cards": status_cards}]
 
