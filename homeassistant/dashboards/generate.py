@@ -3,9 +3,10 @@
 
 Enumerates every OSELIA gateway (HA devices whose identifier is `hearth_<id>`),
 reads their entities from the registry, and builds one Sections view per gateway
-(logo + status + inputs grouped by board + controls). Pushes it as the storage-mode
-dashboard `oselia-hearth` via the HA WebSocket API -- the same mechanism the
-provisioning wizard uses (`provisioning/ha_setup.py`).
+(logo + status incl. the structured Diagnostics health + recovery counters + a fault
+logbook; inputs grouped by board, each board led by its MCP-chip health + last-error;
+controls). Pushes it as the storage-mode dashboard `oselia-hearth` via the HA WebSocket
+API -- the same mechanism the provisioning wizard uses (`provisioning/ha_setup.py`).
 
 Robust to any number of gateways and boards; entity_ids come from the registry (not
 constructed), so name-collision suffixes (_2, ...) are handled.
@@ -32,15 +33,23 @@ URL_PATH = "oselia-hearth"
 TITLE = "OSELIA Hearth"
 
 # Diagnostic sensors shown in the Status block, in order: (unique-id key, label).
+# Keys map to the firmware diag/state via the integration's `diag_<key>` entities.
 STATUS_SENSORS = [
     ("ip", "IP address"),
     ("uptime", "Uptime"),
     ("temperature", "Temperature"),
-    ("boards", "Boards online"),
+    ("boards", "Input boards"),
+    ("boards_ok", "Boards responding"),
+    ("reset_cause", "Last reset"),
     ("reconnects", "Reconnects"),
     ("dropped", "Dropped"),
+    ("bus_recoveries", "I²C bus recoveries"),
+    ("mcp_resets", "MCP resets"),
 ]
 _EVENT_RE = re.compile(r"_b(\d+)_in(\d+)_event$")
+# Per-board MCP health entities (fw >= 0.7.0): connectivity + last-error, per board.
+_MCP_RE = re.compile(r"_board(\d+)_mcp$")
+_MCPERR_RE = re.compile(r"_board(\d+)_mcp_error$")
 
 
 # ---------------------------------------------------------------------------
@@ -150,13 +159,15 @@ def feed_error_note(fw_entity):
     }
 
 
-def build_view(gw_id, friendly, by_role, inputs_by_board, logo, broker):
+def build_view(gw_id, friendly, by_role, inputs_by_board, mcp_by_board, logo, broker):
     """One Sections view for a single gateway."""
     status_cards = []
     if logo:
         status_cards.append({"type": "picture", "image": logo,
                              "tap_action": {"action": "none"}, "alt_text": TITLE})
     status_cards.append(heading("Status", "mdi:heart-pulse"))
+    if "diagnostics" in by_role:                 # health summary (ok/degraded/mcp_fault/…)
+        status_cards.append(tile(by_role["diagnostics"], "Health"))
     if broker:                                   # integration's MQTT link (hub device)
         status_cards.append(tile(broker, "Broker"))
     if "firmware" in by_role:
@@ -167,12 +178,21 @@ def build_view(gw_id, friendly, by_role, inputs_by_board, logo, broker):
     for key, label in STATUS_SENSORS:
         if key in by_role:
             status_cards.append(tile(by_role[key], label))
+    if "fault" in by_role:                       # fault timeline (HA logbook)
+        status_cards.append({"type": "logbook", "title": "Recent faults",
+                             "entities": [by_role["fault"]]})
 
     sections = [{"type": "grid", "cards": status_cards}]
 
-    for board in sorted(inputs_by_board):
+    # One section per board: its MCP health (connectivity + last error) then its inputs.
+    for board in sorted(set(inputs_by_board) | set(mcp_by_board)):
         cards = [heading("Wall switches · board %d" % board, "mdi:light-switch")]
-        for pin, ent in sorted(inputs_by_board[board]):
+        mcp = mcp_by_board.get(board, {})
+        if mcp.get("mcp"):
+            cards.append(tile(mcp["mcp"], "MCP chip"))
+        if mcp.get("err"):
+            cards.append(tile(mcp["err"], "MCP last error"))
+        for pin, ent in sorted(inputs_by_board.get(board, [])):
             cards.append(tile(ent, "Input %d" % pin, icon="mdi:gesture-tap-button"))
         sections.append({"type": "grid", "cards": cards})
 
@@ -212,6 +232,10 @@ def _role_of(unique_id, gw_id):
     if rest.startswith("diag_"):
         key = rest[len("diag_"):]
         return {"board_addrs": "board_addrs"}.get(key, key)  # ethernet, ip, uptime...
+    if rest == "diagnostics":            # the structured root-cause Diagnostics sensor
+        return "diagnostics"
+    if rest == "fault":                  # the device-level fault event entity
+        return "fault"
     if rest == "firmware":
         return "firmware"
     if rest == "log_level":
@@ -242,7 +266,7 @@ def gateways(ws):
                 gw_id = ident[1][len("hearth_"):]
         if not gw_id:
             continue
-        by_role, inputs_by_board = {}, {}
+        by_role, inputs_by_board, mcp_by_board = {}, {}, {}
         for e in by_device.get(d["id"], []):
             if e.get("disabled_by"):
                 continue
@@ -252,11 +276,19 @@ def gateways(ws):
                 b, p = int(m.group(1)), int(m.group(2))
                 inputs_by_board.setdefault(b, []).append((p, eid))
                 continue
+            me = _MCPERR_RE.search(uid)            # per-board MCP last-error sensor
+            if me and eid.startswith("sensor."):
+                mcp_by_board.setdefault(int(me.group(1)), {})["err"] = eid
+                continue
+            mc = _MCP_RE.search(uid)               # per-board MCP connectivity
+            if mc and eid.startswith("binary_sensor."):
+                mcp_by_board.setdefault(int(mc.group(1)), {})["mcp"] = eid
+                continue
             role = _role_of(uid, gw_id)
             if role:
                 by_role[role] = eid
         friendly = d.get("name_by_user") or d.get("name") or "Hearth %s" % gw_id
-        out.append((gw_id, friendly, by_role, inputs_by_board))
+        out.append((gw_id, friendly, by_role, inputs_by_board, mcp_by_board))
     return sorted(out, key=lambda g: g[0])
 
 
@@ -274,8 +306,8 @@ def build_config(ws):
     broker = next((e["entity_id"] for e in ws.call("config/entity_registry/list")
                    if str(e.get("unique_id", "")).startswith("oselia_broker_")), None)
     gws = gateways(ws)
-    views = [build_view(gid, name, roles, inputs, logo, broker)
-             for gid, name, roles, inputs in gws]
+    views = [build_view(gid, name, roles, inputs, mcp, logo, broker)
+             for gid, name, roles, inputs, mcp in gws]
     return {"title": TITLE, "views": views}, [g[0] for g in gws]
 
 

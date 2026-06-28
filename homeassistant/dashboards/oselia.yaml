@@ -22,6 +22,9 @@ views:
             heading_style: title
             icon: "mdi:heart-pulse"
           - type: tile
+            entity: sensor.hearth_893922_diagnostics
+            name: Health
+          - type: tile
             entity: update.hearth_893922_firmware
             name: Firmware
           - type: markdown
@@ -45,20 +48,42 @@ views:
             entity: sensor.hearth_893922_temperature
             name: Temperature
           - type: tile
-            entity: sensor.hearth_893922_input_boards_online
-            name: Boards online
+            entity: sensor.hearth_893922_input_boards
+            name: Input boards
+          - type: tile
+            entity: sensor.hearth_893922_input_boards_responding
+            name: Boards responding
+          - type: tile
+            entity: sensor.hearth_893922_last_reset_cause
+            name: Last reset
           - type: tile
             entity: sensor.hearth_893922_reconnects
             name: Reconnects
           - type: tile
             entity: sensor.hearth_893922_dropped_events
             name: Dropped
+          - type: tile
+            entity: sensor.hearth_893922_i2c_bus_recoveries
+            name: I²C bus recoveries
+          - type: tile
+            entity: sensor.hearth_893922_mcp_resets
+            name: MCP resets
+          - type: logbook
+            title: Recent faults
+            entities:
+              - event.hearth_893922_fault
       - type: grid
         cards:
           - type: heading
             heading: Wall switches · board 1
             heading_style: title
             icon: "mdi:light-switch"
+          - type: tile
+            entity: binary_sensor.hearth_893922_board_1_mcp
+            name: MCP chip
+          - type: tile
+            entity: sensor.hearth_893922_board_1_mcp_error
+            name: MCP last error
           - type: tile
             entity: event.hearth_893922_board_1_input_1
             name: Input 1
