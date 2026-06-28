@@ -389,12 +389,20 @@ def run(shared, queue, device_id):
             _ota_abort("apply:%s" % e)
 
     def _ota_confirm_if_healthy(now_ms):
-        """Once the running build has been online+healthy for OTA_BOOT_CONFIRM_MS,
-        clear the boot-confirm pending flag so boot.py won't auto-revert it."""
+        """Once the running build has been NETWORK-online for OTA_BOOT_CONFIRM_MS, clear
+        the boot-confirm pending flag so boot.py won't auto-revert it.
+
+        Requires only mqtt+ethernet -- deliberately NOT mcp. As of 0.7.x a degraded MCP
+        is a normal, reported, recoverable running state (the firmware is built to keep
+        running, reporting, and recovering with a dead/absent chip -- never rebooting for
+        it; the watchdog likewise guards only the network core). Gating boot-confirm on
+        mcp would auto-revert a perfectly good build on exactly the units that have an MCP
+        fault -- the ones that most need the upgrade. Network health is the real "did this
+        build come up?" signal."""
         if ota_confirmed[0] or not cfg.OTA_ENABLE:
             return
         h = shared.health()
-        if not (h["mqtt"] and h["ethernet"] and h["mcp"]):
+        if not (h["mqtt"] and h["ethernet"]):
             ota_healthy_since[0] = 0
             return
         if ota_healthy_since[0] == 0:
