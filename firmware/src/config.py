@@ -45,7 +45,12 @@ PIN_CH9120_RST = 19            # active LOW (POC: Pin(19))
 I2C_ID = 1                     # manufactured dib-monolith uses I2C1 (GP26/GP27)
 PIN_I2C_SDA = 26               # board net SDA -> RP2040-ETH ADC0 pad = GP26 (I2C1 SDA)
 PIN_I2C_SCL = 27               # board net SCK -> RP2040-ETH ADC1 pad = GP27 (I2C1 SCL)
-I2C_FREQ = 400_000             # POC used 100_000; 400k is fine for a short bus
+I2C_FREQ = 50_000              # 50 kHz: generous rise-time margin for the long ember
+                               # satellite runs (cable adds bus capacitance; slower edges
+                               # = far fewer NACK/retry/recovery events). POC ran 100k,
+                               # 400k was an optimistic "short bus" bump. Even at 8 chips
+                               # the per-poll bus time (~8 ms) fits the 20 ms poll window;
+                               # imperceptible for wall switches.
 # Board discovery: with MCP_AUTODISCOVER the firmware scans the bus at boot and
 # drives exactly the chips that respond (0x20..0x27) -- no count to configure, and
 # an unwired board simply isn't advertised (no permanent MCP fault). MCP_ADDRESSES
