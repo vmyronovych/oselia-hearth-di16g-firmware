@@ -258,6 +258,7 @@ def run(shared, queue):
             counters["mcp_resets"] += 1
             _fault(now_ms, CODE_MCP_RESET, "L2 /RESET pulse")
             log.warn("MCP recovery L2: /RESET pulse", every_ms=2000, key="rec2")
+        utime.sleep_ms(cfg.MCP_RESET_SETTLE_MS)   # let chip/bus settle before re-init
         for s in slots:
             s.mcp.i2c = i2c                 # repoint each chip at the new bus
             s.try_init(now_ms)

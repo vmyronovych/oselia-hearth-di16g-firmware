@@ -86,6 +86,18 @@ class MCP23017:
         self._w(GPINTENA, 0x00)      # interrupts OFF (we poll); don't drive INT
         self._w(GPINTENB, 0x00)
         self._w(IOCON, 0x00)         # defaults: no MIRROR/ODR
+        # VERIFY the input-critical config actually took. A glitchy I2C transaction --
+        # common on the just-reclocked/reset bus during an MCP recovery -- can corrupt a
+        # write, e.g. drop a bit of a register ADDRESS so 0x00 lands in IODIRA, turning
+        # PORTA into OUTPUTS. The chip still ACKs reads, so those inputs go SILENTLY DEAD
+        # (they read the output latch, never the switches; HW-FOUND). Read IODIR + GPPU
+        # back and raise on mismatch so try_init marks the chip not-ok and re-inits next
+        # pass, when the bus has settled -- never leaving a half-configured chip "healthy".
+        iodir = self._r(IODIRA, 2)
+        gp = self._r(GPPUA, 2)
+        if not (iodir[0] == 0xFF and iodir[1] == 0xFF and gp[0] == gppu and gp[1] == gppu):
+            raise OSError("MCP@0x%02x config verify failed: IODIR=%02x%02x GPPU=%02x%02x"
+                          % (self.addr, iodir[0], iodir[1], gp[0], gp[1]))
         self.read_all()
 
     def read_all(self):
