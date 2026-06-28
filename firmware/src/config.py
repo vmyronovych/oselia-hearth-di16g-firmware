@@ -53,15 +53,14 @@ I2C_FREQ = 400_000             # POC used 100_000; 400k is fine for a short bus
 # (the wizard's --boards / site.json board_count does this) to pin an exact list.
 MCP_AUTODISCOVER = True
 MCP_ADDRESSES = [0x20]         # fallback / explicit list (board1 = 0x20)
-PIN_MCP_INT = 22               # SHARED wired-OR INT line; board net INTA -> GP22
-                               # (POC used GP2; manufactured board routes it to GP22)
+# INT is NOT used: the firmware reads inputs by POLLING (MCP_POLL_MS). The shared
+# wired-OR INT line caused the original freeze + dropped-press faults, so it's
+# deliberately ignored -- GP22 and these settings are legacy/unused (no board change
+# needed; the physical line just goes unconnected in firmware).
+PIN_MCP_INT = None             # legacy: shared INT net (GP22). Unused under polling.
 PIN_MCP_RESET = 9              # board net RESET -> MCP /RESET (pin 18) on GP9.
-                               # Driven HIGH (deasserted) at boot, pulsed LOW once to
-                               # reset the chips. None = tied high in hardware (POC).
-MCP_INT_ACTIVE_LOW = True      # active-low INT (IOCON bit)
-MCP_INT_OPEN_DRAIN = True      # IOCON ODR=1 so all chips can share one INT line
-                               # (needs a pull-up on the INT net; GP22 internal
-                               # pull-up is enabled, add external 4.7k for >2 chips)
+                               # Driven HIGH (deasserted) at boot, pulsed LOW to reset
+                               # the chips (boot + L2 recovery). None = tied high (POC).
 
 # Onboard WS2812 status LED (single addressable RGB pixel)
 PIN_STATUS_LED = 25            # WS2812 data pin (POC: LED_PIN = 25)
@@ -164,12 +163,8 @@ MCP_POLL_MS = 20               # PERIODIC poll of healthy chips, independent of 
                                # single wired-OR IRQ (a missed/quirky INT would
                                # silently drop presses). ~20 ms = imperceptible for
                                # wall switches, light I2C load.
-MCP_INT_STUCK_MS = 250         # shared INT held asserted this long despite reading
-                               # every healthy chip -> a dead chip is holding the
-                               # wired-OR line: count it + trigger recovery
 MCP_RECOVERY_AFTER_FAILS = 3   # consecutive failed health checks on a board before
-                               # escalating to a bus/reset recovery (a stuck INT
-                               # bypasses this gate)
+                               # escalating to a bus/reset recovery
 MCP_RECOVERY_MIN_INTERVAL_MS = 10000  # min spacing between recovery actions (no
                                # thrash); escalates L1 (I2C reclock) -> L2 (/RESET)
 MCP_RECOVERY_MAX_INTERVAL_MS = 300000  # backoff cap: the recovery interval doubles

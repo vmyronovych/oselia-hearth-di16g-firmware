@@ -131,10 +131,10 @@ All under `BASE_TOPIC=hearth`, `base = hearth/<device_id>`.
     {"board": 2, "addr": "0x21", "ok": false, "code": "i2c_eio", "detail": "OSError 5 read",
      "fails": 12, "last_ok_s": 480, "recoveries": 3}
   ],
-  "counters": {"int_stuck": 7, "bus_recoveries": 4, "mcp_resets": 2,
+  "counters": {"bus_recoveries": 4, "mcp_resets": 2,
                "reconnects": 1, "dropped": 0},
-  "last_fault": {"ts": 5212, "component": "mcp", "code": "int_stuck",
-                 "detail": "INT held >250ms", "board": 2},
+  "last_fault": {"ts": 5212, "component": "mcp", "code": "i2c_eio",
+                 "detail": "OSError 5 read", "board": 2},
   "recent": [ /* up to DIAG_FAULT_RING fault records, newest last (the timeline) */ ],
   "mem_free": 41200, "temp_c": 44.1,
   // back-compat fields retained: reconnects, dropped, last
@@ -148,8 +148,9 @@ rather than only the latest retained snapshot).
 
 **Stable error-code taxonomy** (`code` / fault `code`; greppable to firmware
 `src/mcp_health.py`): `i2c_eio`, `i2c_timeout`, `mcp_absent`, `mcp_init_fail`,
-`int_stuck`, `bus_recovered`, `mcp_reset`, `eth_link_lost`, `mqtt_disconnect`,
+`bus_recovered`, `mcp_reset`, `eth_link_lost`, `mqtt_disconnect`,
 `mqtt_connack_refused`, `ota_*`. The raw errno/exception text rides in `detail`.
+(Input is pure-polling; there is no INT, so no `int_stuck`.)
 
 Input count still comes from `diag/state.boards` (×16). The integration should create
 input entities for all `boards`, and surface per-board health from `mcp[]` (so a single

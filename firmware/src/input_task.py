@@ -1,28 +1,26 @@
 """Core 0 -- real-time input task (multi-board), resilient + observable.
 
-Owns the shared I2C bus and up to 8 MCP23017 chips, resolves the board set at
-boot (so the network core is never gated on I2C), the shared wired-OR INT line,
-debounce + gesture detection for every input, the hardware watchdog, AND the MCP
-recovery + health bookkeeping. Detected gestures are pushed onto the event queue
-(global 1-based index) for core 1.
+Owns the shared I2C bus and up to 8 MCP23017 chips, resolves the board set at boot
+(so the network core is never gated on I2C), debounce + gesture detection for every
+input, AND the MCP recovery + health bookkeeping. Detected gestures are pushed onto
+the event queue (global 1-based index) for core 1.
 
 Board number = position in the resolved address list (1-based; this task scans the
-bus at boot). Global index for board b, pin p (both 1-based) is (b-1)*16 + p. One
-INT line is shared by all chips (open-drain, wired-OR).
+bus at boot). Global index for board b, pin p (both 1-based) is (b-1)*16 + p.
+
+Input is **pure polling**: every healthy chip's GPIO is read on a fixed cadence
+(MCP_POLL_MS) -- there is NO interrupt. The MCP23017 INT/wired-OR line is not used by
+the firmware (it was the source of the original freeze + dropped-press faults; a
+shared open-drain IRQ across satellite boards is inherently fragile). Polling is
+deterministic, self-healing, and -- with the hardware RC+optocoupler debounce --
+plenty fast for wall switches.
 
 Resilience (SPEC.md sec.12) -- an MCP fault must never freeze healthy inputs nor
-reboot the board:
-  * Reads happen whenever the INT flag is set OR the INT pin reads asserted, not
-    only on the IRQ edge. A dead chip that can't release the wired-OR INT line can
-    therefore no longer stop healthy chips from being polled.
-  * A shared INT held asserted past MCP_INT_STUCK_MS (despite reading every healthy
-    chip) is recorded as an `int_stuck` fault and triggers recovery.
-  * Recovery escalates, rate-limited: L1 = clock the I2C bus to free a stuck SDA;
-    L2 = pulse the MCP /RESET line. Never a board reboot for an MCP fault.
-
-Observability -- per-board health (ok / error code / last error / fail & recovery
-counts) and global counters are kept in mcp_health records, snapshotted into
-SharedState, and published by core 1 to diag/state + diag/event.
+reboot the board: a chip that fails reads is marked down, skipped, and recovered.
+Recovery escalates, rate-limited with backoff: L1 = clock the I2C bus to free a
+stuck SDA; L2 = pulse the MCP /RESET line. The watchdog lives on core1, so a core0
+I2C stall never reboots. Per-board health + counters are snapshotted into
+SharedState and published by core1 to diag/state + diag/event.
 
 Touches `machine`; the pure pieces it composes (debounce, press_detector, clock,
 event_queue, mcp_health) are host-tested.
@@ -36,7 +34,7 @@ from debounce import Debouncer
 from press_detector import MultiChannelDetector
 import mcp_health
 from mcp_health import (BoardStatus, FaultRing, classify_oserror,
-                        CODE_MCP_ABSENT, CODE_MCP_INIT_FAIL, CODE_INT_STUCK,
+                        CODE_MCP_ABSENT, CODE_MCP_INIT_FAIL,
                         CODE_BUS_RECOVERED, CODE_MCP_RESET)
 import clock
 import log
@@ -44,13 +42,7 @@ import log
 PINS_PER_CHIP = 16
 _IDLE_BITS = 0xFFFF             # all-released for active-low (no stuck press when down)
 
-_int_flag = False              # ISR-shared flag; ISR only writes this
 _rst_pin = None                # held reference so the /RESET line stays driven high
-
-
-def _on_mcp_int(pin):
-    global _int_flag
-    _int_flag = True
 
 
 def release_mcp_reset():
@@ -158,8 +150,7 @@ class _Slot:
     def __init__(self, board, addr, i2c):
         self.board = board
         self.addr = addr
-        self.mcp = MCP23017(i2c, addr, cfg.MCP_INT_ACTIVE_LOW,
-                            retries=cfg.I2C_RETRIES)
+        self.mcp = MCP23017(i2c, addr, retries=cfg.I2C_RETRIES)
         self.status = BoardStatus(board, addr)
         self.bits = _IDLE_BITS       # last read (idle = all released for active-low)
 
@@ -171,8 +162,7 @@ class _Slot:
                 self.bits = _IDLE_BITS
                 return False, self.status.mark_fail(CODE_MCP_ABSENT,
                                                     "no ACK on bus scan")
-            self.mcp.init(pullups=cfg.USE_INTERNAL_PULLUPS,
-                          open_drain=cfg.MCP_INT_OPEN_DRAIN)
+            self.mcp.init(pullups=cfg.USE_INTERNAL_PULLUPS)
             self.bits = self.mcp.read_all()
             edge = self.status.mark_ok(now_ms)
             if edge:
@@ -204,8 +194,6 @@ class _Slot:
 
 
 def run(shared, queue):
-    global _int_flag
-
     mono = clock.from_utime()
 
     # Bring the bus up and resolve the board set HERE, on core 0, so the network
@@ -223,7 +211,7 @@ def run(shared, queue):
     slots = [_Slot(b + 1, addr, i2c) for b, addr in enumerate(mcp_addresses)]
     n_inputs = n * PINS_PER_CHIP
 
-    counters = {"int_stuck": 0, "bus_recoveries": 0, "mcp_resets": 0}
+    counters = {"bus_recoveries": 0, "mcp_resets": 0}
     ring = FaultRing(cfg.DIAG_FAULT_RING)
     policy = mcp_health.RecoveryPolicy(
         cfg.MCP_RECOVERY_AFTER_FAILS, cfg.MCP_RECOVERY_MIN_INTERVAL_MS,
@@ -240,8 +228,7 @@ def run(shared, queue):
             "mcp": mcp,
             "boards_total": len(slots),
             "boards_ok": boards_ok,
-            "counters": {"int_stuck": counters["int_stuck"],
-                         "bus_recoveries": counters["bus_recoveries"],
+            "counters": {"bus_recoveries": counters["bus_recoveries"],
                          "mcp_resets": counters["mcp_resets"]},
             "last_fault": ring.last(),
             "recent": ring.recent(),
@@ -287,32 +274,22 @@ def run(shared, queue):
     shared.set_mcp(_all_ok())
     shared.set_mcp_diag(_snapshot(mono.ms()), changed=True)
 
-    # Shared wired-OR INT (falling = some chip asserted active-low).
-    trig = machine.Pin.IRQ_FALLING if cfg.MCP_INT_ACTIVE_LOW else machine.Pin.IRQ_RISING
-    int_pin = machine.Pin(cfg.PIN_MCP_INT, machine.Pin.IN, machine.Pin.PULL_UP)
-    int_pin.irq(trigger=trig, handler=_on_mcp_int)
-    int_asserted_level = 0 if cfg.MCP_INT_ACTIVE_LOW else 1
-
     # One debouncer + detector slot per global input index (1..n_inputs).
     indices = tuple(range(1, n_inputs + 1))
     debouncers = {i: Debouncer(cfg.DEBOUNCE_MS, initial=False) for i in indices}
     detector = MultiChannelDetector(indices, cfg.LONG_MS, cfg.DOUBLE_GAP_MS)
     applied_tune_ver = shared.tune_version    # live-tune: re-apply when core1 bumps it
 
-    _int_flag = True                 # force a first full read
     last_health = mono.ms()
-    last_poll = mono.ms()            # periodic safety poll (INT-independent)
-    int_assert_since = None          # mono ms the INT line has been held asserted
-    int_stuck_counted = False        # one int_stuck count per stuck episode
+    last_poll = mono.ms() - cfg.MCP_POLL_MS    # poll on the first pass
 
-    # NOTE: core0 does NOT own the watchdog. The WDT is fed by core1 (net_task) so an
-    # MCP/I2C stall on THIS core can never reboot the board -- a hung bus is reported
-    # and recovered, never reset (SPEC.md sec.12). Bounded I2C ops keep this loop
-    # responsive regardless. core1 reboots only if the *network* core itself wedges.
+    # NOTE: input is PURE POLLING -- there is no MCP interrupt. core0 also does NOT own
+    # the watchdog (it's on core1), so an MCP/I2C stall on this core can never reboot
+    # the board -- a hung bus is reported and recovered, never reset (SPEC.md sec.12).
+    # Bounded I2C ops keep this loop responsive regardless.
 
     while True:
         now = mono.ms()
-        int_stuck_pending = False
 
         # Live re-tune: cheap unlocked int compare each pass; lock only on change.
         if shared.tune_version != applied_tune_ver:
@@ -323,66 +300,10 @@ def run(shared, queue):
             applied_tune_ver = ver
             log.info("tunables: long=%d double=%d debounce=%d" % (lm, dg, db))
 
-        # Read whenever the IRQ fired OR the shared INT line reads asserted. The
-        # asserted-level check is what makes a missed edge / a line held by a dead
-        # chip unable to freeze the healthy chips.
-        asserted = int_pin.value() == int_asserted_level
-        if _int_flag or asserted:
-            _int_flag = False
-            edge_any = False
-            for s in slots:
-                if s.status.ok and s.read(now):    # True == down edge
-                    edge_any = True
-                    _fault(now, s.status.code, s.status.detail, s.board)
-            # Still held after reading every healthy chip -> a dead chip is holding
-            # the wired-OR line. Record it (once per episode) and ask for recovery.
-            if int_pin.value() == int_asserted_level:
-                if int_assert_since is None:
-                    int_assert_since = now
-                elif (now - int_assert_since) > cfg.MCP_INT_STUCK_MS:
-                    int_stuck_pending = True
-                    if not int_stuck_counted:
-                        counters["int_stuck"] += 1
-                        int_stuck_counted = True
-                        bad = None
-                        for s in slots:
-                            if not s.status.ok:
-                                bad = s.board
-                                break
-                        _fault(now, CODE_INT_STUCK,
-                               "INT held >%dms" % cfg.MCP_INT_STUCK_MS, bad)
-                        log.error("shared INT stuck asserted",
-                                  every_ms=2000, key="intstuck")
-                        edge_any = True
-            else:
-                int_assert_since = None
-                int_stuck_counted = False
-            if edge_any:
-                shared.set_mcp(_all_ok())
-                shared.set_mcp_diag(_snapshot(now), changed=True)
-
-        # Recovery escalation (rate-limited inside the policy). Recovery only fires
-        # when a chip is actually FAILING (unreadable). A stuck INT escalates it
-        # faster, but ONLY when something is failing -- a held/quirky INT on an
-        # otherwise-healthy bus must never /RESET the working chips. When all healthy,
-        # decide() still runs to reset the backoff ladder.
-        failing = not _all_ok()
-        if failing:
-            fail_streak = 0
-            for s in slots:
-                if s.status.fails > fail_streak:
-                    fail_streak = s.status.fails
-            level = policy.decide(now, True, fail_streak, int_stuck_pending)
-            if level:
-                _do_recovery(level, now)
-        else:
-            policy.decide(now, False, 0, False)   # healthy -> reset the backoff ladder
-
-        # Periodic safety poll: read every healthy chip on a fixed cadence regardless
-        # of the INT line. The INT-driven read above is only a latency accelerator;
-        # this guarantees presses are captured even if the shared INT stops asserting
-        # (quirk after a recovery, missed edge, etc.) -- input must never depend on a
-        # single shared IRQ. Cheap: a 2-byte read per healthy chip every MCP_POLL_MS.
+        # Read every healthy chip on a fixed cadence -- the sole input mechanism (no
+        # INT). Deterministic and self-healing: a chip that glitches simply shows up
+        # in the next poll; a dead chip is marked down (below) and skipped. Cheap: a
+        # 2-byte read per healthy chip every MCP_POLL_MS.
         if (now - last_poll) >= cfg.MCP_POLL_MS:
             last_poll = now
             edge_any = False
@@ -393,6 +314,21 @@ def run(shared, queue):
             if edge_any:
                 shared.set_mcp(_all_ok())
                 shared.set_mcp_diag(_snapshot(now), changed=True)
+
+        # Recovery escalation (rate-limited with backoff inside the policy). Fires only
+        # when a chip is actually FAILING (unreadable); when all healthy, decide() still
+        # runs to reset the backoff ladder.
+        failing = not _all_ok()
+        if failing:
+            fail_streak = 0
+            for s in slots:
+                if s.status.fails > fail_streak:
+                    fail_streak = s.status.fails
+            level = policy.decide(now, True, fail_streak, False)
+            if level:
+                _do_recovery(level, now)
+        else:
+            policy.decide(now, False, 0, False)   # healthy -> reset the backoff ladder
 
         # Periodic health/recovery: re-init any chip that's down (hot-add on return).
         if (now - last_health) > cfg.MCP_HEALTHCHECK_MS:

@@ -255,8 +255,8 @@ parameters in the Home Assistant app with no extra service. Built in `diag.py`
 **Structured root-cause observability (fw ≥ 0.7.0).** `diag/state` is extended with
 `hw`, `reset_cause` (`power_on`/`wdt`/`soft`/…), `health` (`ok`/`degraded`/`mcp_fault`/
 `net_fault`), `boards_total`/`boards_ok`, a per-board `mcp[]` array (`{board,addr,ok,
-code,detail,fails,last_ok_s,recoveries}`), a `counters` block (`int_stuck`,
-`bus_recoveries`, `mcp_resets`, `reconnects`, `dropped`), and a `last_fault` + bounded
+code,detail,fails,last_ok_s,recoveries}`), a `counters` block (`bus_recoveries`,
+`mcp_resets`, `reconnects`, `dropped`), and a `last_fault` + bounded
 `recent[]` fault ring (the timeline). A non-retained `…/diag/event` topic carries each
 fault record the instant it transitions (HA logbook). `code` values come from the stable
 taxonomy in `mcp_health.py`. In **oselia** mode the OSELIA integration renders these as a
@@ -545,21 +545,23 @@ Still to confirm:
   core 0 itself responsive on a bad bus, every I²C transaction is bounded by
   `I2C_TIMEOUT_US` and presence checks probe only the MCP strap range (not a 112-
   address `i2c.scan()`), so a single op fails in ~tens of ms instead of hanging.
-- **MCP fault tolerance + active recovery**: healthy chips are read on a **periodic
-  poll** (`MCP_POLL_MS`, ~20 ms) **independent of the INT line** — the shared INT/IRQ is
-  only a latency accelerator, so input never depends on a single wired-OR IRQ (a
-  missed/quirky INT after a recovery can't silently drop presses; HW-found). Reads also
-  fire immediately whenever the IRQ flag is set **or** the INT pin reads asserted, so a
-  dead chip holding the wired-OR line can't freeze the healthy chips. Recovery only runs
-  when a chip is actually failing (a held/odd INT on a healthy bus never `/RESET`s the
-  working chips). A line held past `MCP_INT_STUCK_MS` despite
-  reading every healthy chip is recorded as `int_stuck` and triggers recovery. Recovery
-  escalates, rate-limited (`MCP_RECOVERY_AFTER_FAILS`, `MCP_RECOVERY_MIN_INTERVAL_MS`):
-  **L1** clocks the I²C bus (≤9 SCL pulses + STOP) to free a stuck SDA, then recreates
-  the peripheral; **L2** pulses the MCP `/RESET` line (GP9). Per-board health, error
-  codes, and `int_stuck`/`bus_recoveries`/`mcp_resets` counters are surfaced in
-  `diag/state` + `diag/event` (§5.2). Pure decision logic lives in host-tested
-  `mcp_health.py`.
+- **Pure-polling input (no interrupt)**: every healthy chip's GPIO is read on a fixed
+  cadence (`MCP_POLL_MS`, ~20 ms). The MCP23017 INT / shared wired-OR IRQ is **not used**
+  — it was the source of the original freeze and dropped-press faults (a shared
+  open-drain IRQ across satellite boards is inherently fragile, and a missed/quirky INT
+  silently drops presses). Polling is deterministic and self-healing: a chip that
+  glitches just shows up in the next poll; latency ≤ `MCP_POLL_MS` is imperceptible for
+  wall switches (the RC+optocoupler already debounces). MCP init leaves interrupts off
+  (`GPINTEN=0`, `IOCON=0`), so nothing drives the INT line.
+- **MCP fault tolerance + active recovery**: a chip that fails reads is marked down,
+  skipped (so it can't affect the healthy boards), and recovered. Recovery runs only
+  when a chip is actually failing and escalates, rate-limited with exponential backoff
+  (`MCP_RECOVERY_AFTER_FAILS`, `MCP_RECOVERY_MIN/MAX_INTERVAL_MS`): **L1** clocks the I²C
+  bus (≤9 SCL pulses + STOP) to free a stuck SDA, then recreates the peripheral; **L2**
+  pulses the MCP `/RESET` line (GP9). Backoff keeps a persistently-absent chip from
+  re-pulsing the shared `/RESET` (which would reset the healthy boards). Per-board health,
+  error codes, and `bus_recoveries`/`mcp_resets` counters are surfaced in `diag/state` +
+  `diag/event` (§5.2). Pure decision logic lives in host-tested `mcp_health.py`.
 - **Reconnect with exponential backoff** (`RECONNECT_BACKOFF_MIN/MAX_MS`), LWT
   (`offline`), availability `online`, and discovery republish on reconnect. Backoff
   waits are chunked so the heartbeat keeps ticking during them.

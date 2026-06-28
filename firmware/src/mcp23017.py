@@ -1,10 +1,12 @@
 """MCP23017 driver tailored to this project.
 
-Configured for: all 16 pins as inputs, interrupt-on-change, INTA/INTB mirrored
-onto a single INT line (IOCON.MIRROR=1). Reading the captured state also clears
-the interrupt.
+Configured for: all 16 pins as inputs with pull-ups, INTERRUPTS DISABLED -- the
+firmware reads by POLLING (input_task), so the INT/wired-OR machinery is left off
+(it caused the original freeze + dropped-press faults). `read_all()` reads both
+ports in one transaction.
 
-See SPEC.md sec.7. Pins/address/polarity come from config.py.
+See SPEC.md sec.7. Pins/address come from config.py. The INT-flavoured helpers
+(`read_changes`, `clear_interrupt`) are retained but unused under polling.
 """
 
 # Register addresses (IOCON.BANK = 0, the power-on default)
@@ -26,10 +28,9 @@ IOCON_INTPOL = 0x02     # INT polarity (active-high) when ODR=0
 
 
 class MCP23017:
-    def __init__(self, i2c, addr, int_active_low=True, retries=3):
+    def __init__(self, i2c, addr, retries=3):
         self.i2c = i2c
         self.addr = addr
-        self.int_active_low = int_active_low
         self.retries = retries
 
     # --- low-level helpers (with bounded retry for bus glitches) ---
@@ -64,19 +65,17 @@ class MCP23017:
         except Exception:
             return False
 
-    def init(self, pullups=True, open_drain=False):
-        """Configure as 16 inputs with mirrored interrupt-on-change.
+    def init(self, pullups=True):
+        """Configure as 16 inputs with pull-ups, INTERRUPTS DISABLED.
 
-        Register sequence CONFIRMED working in the POC (dib/app
-        rp2040-eth-mqtt-dip-v1.py): inputs + pull-ups + compare-to-previous
-        interrupt-on-change, IOCON MIRROR + active-low INT. Note IOCON.BANK
-        defaults to 0 here, so 16-bit registers are A/B-adjacent.
-
-        `open_drain=True` sets IOCON.ODR (0x04) so multiple chips can share one
-        wired-OR INT line into a single RP2040 GPIO. With ODR set the INT pin is
-        open-drain active-low (INTPOL is then ignored).
+        The firmware reads inputs by POLLING (see input_task), so the MCP's
+        interrupt-on-change / wired-OR INT machinery is deliberately left off:
+        GPINTEN=0 (no INT asserted -- nothing drives the shared INT line) and
+        IOCON=0 (defaults; no MIRROR/ODR). This removes the fragile shared-IRQ
+        dependency that caused the original freeze + dropped-press faults. Only
+        IODIR (inputs), IPOL (no HW inversion), and GPPU (pull-ups) are set.
+        IOCON.BANK defaults to 0, so A/B registers are adjacent.
         """
-        iocon = 0x40 | (0x04 if open_drain else 0x00)   # MIRROR (+ODR)
         gppu = 0xFF if pullups else 0x00
         self._w(IODIRA, 0xFF)        # all inputs
         self._w(IODIRB, 0xFF)
@@ -84,12 +83,10 @@ class MCP23017:
         self._w(IPOLB, 0x00)
         self._w(GPPUA, gppu)
         self._w(GPPUB, gppu)
-        self._w(INTCONA, 0x00)       # compare to previous value
-        self._w(INTCONB, 0x00)
-        self._w(GPINTENA, 0xFF)      # interrupt on change, all pins
-        self._w(GPINTENB, 0xFF)
-        self._w(IOCON, iocon)        # MIRROR (+ODR for shared INT)
-        self.read_all()              # clear any latched interrupt
+        self._w(GPINTENA, 0x00)      # interrupts OFF (we poll); don't drive INT
+        self._w(GPINTENB, 0x00)
+        self._w(IOCON, 0x00)         # defaults: no MIRROR/ODR
+        self.read_all()
 
     def read_all(self):
         """Read both ports in one I2C transaction; clears the interrupt.
