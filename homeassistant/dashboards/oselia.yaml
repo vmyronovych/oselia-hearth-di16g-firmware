@@ -68,10 +68,19 @@ views:
           - type: tile
             entity: sensor.hearth_893922_mcp_resets
             name: MCP resets
-          - type: logbook
+          - type: markdown
             title: Recent faults
-            entities:
-              - event.hearth_893922_fault
+            content: >-
+              {% set lf =
+              state_attr('sensor.hearth_893922_diagnostics', 'last_fault') %}{%
+              if lf %}**Latest:** `{{ lf.code }}`{% if lf.get('board') is not
+              none %} · board {{ lf.board }}{% endif %} — {{ lf.detail }}{% else
+              %}No faults recorded.{% endif %}
+
+
+              Full timeline + per-chip codes are in the **Health** tile's
+              attributes (`last_fault`, `recent`, `mcp`), or device → **Download
+              diagnostics**.
       - type: grid
         cards:
           - type: heading
