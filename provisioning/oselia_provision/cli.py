@@ -198,9 +198,6 @@ def provision(
                 "Write config to the board anyway?", default=False):
             console.die("Aborted at broker validation; re-run with corrected details.")
 
-        console.info("HA integration: OSELIA custom integration (firmware skips MQTT "
-                     "discovery; the integration + dashboard own the entities).")
-
         site = siteconfig.build_site_dict(
             broker_ip, broker_port, muser, mpass, board_count=boards, use_dhcp=True,
             static=static_d, names=name_rows, diag=not no_diag)
@@ -234,6 +231,10 @@ def provision(
             except Exception as e:
                 stream_status, stream_text = ("error", "")
                 console.warn("  (boot-log stream unavailable: %s)" % e)
+            if not stream_text.strip():
+                console.info("  (no boot log appeared over USB -- on this board the firmware's "
+                             "network core claims the USB-CDC as it boots, so the held session "
+                             "goes quiet. The broker check below is the authoritative one.)")
 
         if device_id:
             mqtt.clear_retained_status(broker_ip, broker_port, muser, mpass,
@@ -273,6 +274,9 @@ def _report_online(device_id):
         console.info("      oselia dashboard render --id %s > oselia-hearth-%s.yaml"
                      % (device_id, device_id.lower()))
     console.info("  • Name your switches in HA -> Settings -> Devices -> the Hearth device.")
+    console.info("  • Heads-up: a running Hearth does NOT expose a USB serial port (its network "
+                 "core claims USB on boot), so `oselia board list`/`monitor` won't see it -- "
+                 "that's expected. Manage the unit through Home Assistant from here.")
 
 
 # ===========================================================================

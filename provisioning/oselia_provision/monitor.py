@@ -186,12 +186,15 @@ def stream_bringup(port, colorize=True, timeout=60.0):
     Ctrl-C. Returns (status, text). FULLY non-fatal -- the broker is the authoritative
     check, so a flaky read never fails an otherwise-good provision."""
     try:
+        # stderr->stdout so an attach failure (e.g. raw-REPL busy) is visible instead of a
+        # silent empty stream; mpremote's own chatter is split out into `diag` below.
         proc = subprocess.Popen(
             ["mpremote", "connect", port, "resume", "exec", _MONITOR_LAUNCH],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     except Exception as e:
         return ("error", "could not start stream: %s" % e)
     lines = []
+    diag = []                 # mpremote/tooling lines (not firmware log) -- shown only if nothing else
     status = {"v": None}
     done = threading.Event()
 
@@ -199,7 +202,8 @@ def stream_bringup(port, colorize=True, timeout=60.0):
         try:
             for line in proc.stdout:
                 line = line.rstrip("\n")
-                if line.startswith("mpremote:"):
+                if line.startswith("mpremote:") or line.startswith("Traceback"):
+                    diag.append(line)
                     continue
                 print(colorize_log_line(line) if colorize else line, flush=True)
                 lines.append(line)
@@ -225,6 +229,10 @@ def stream_bringup(port, colorize=True, timeout=60.0):
             proc.kill()
         except Exception:
             pass
+    # If the firmware printed nothing but mpremote complained, surface that one line so an
+    # empty stream isn't a total mystery (the caller still treats the broker as authoritative).
+    if not lines and diag:
+        print("  [bring-up] %s" % diag[-1], flush=True)
     text = "\n".join(lines)
     return (status["v"] or classify_bringup(text)[0], text)
 
