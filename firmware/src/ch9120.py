@@ -167,6 +167,10 @@ def bring_up(cfg, read_ip=False):
         except Exception:
             leased_ip = None
 
+    # Large RX ring buffer (default is only 256 B): during OTA the firmware is busy
+    # writing a chunk to flash and not draining the UART, so the inbound CH9120 byte
+    # stream must buffer without overrunning. getattr keeps an older slot's config working.
     uart = UART(cfg.PIN_CH9120_UART_ID, baudrate=cfg.UART_BAUD,
-                tx=Pin(cfg.PIN_CH9120_TX), rx=Pin(cfg.PIN_CH9120_RX))
+                tx=Pin(cfg.PIN_CH9120_TX), rx=Pin(cfg.PIN_CH9120_RX),
+                rxbuf=getattr(cfg, "UART_RXBUF", 8192))
     return uart, ch, leased_ip
