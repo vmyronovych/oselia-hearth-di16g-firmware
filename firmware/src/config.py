@@ -109,7 +109,7 @@ DEVICE_ID = None               # None -> derive from unique_id() last 6 hex
 DEVICE_NAME = "Hearth"
 DEVICE_MODEL = "Hearth (DI16-G)"
 DEVICE_MANUFACTURER = "OSELIA"
-SW_VERSION = "0.7.0"
+SW_VERSION = "0.8.0"
 HW_VERSION = "DI16-G"                   # board model (shown as Hardware in HA)
 PROJECT_URL = "https://github.com/vmyronovych/oselia-hearth-di16g-firmware"  # HA discovery origin
 
