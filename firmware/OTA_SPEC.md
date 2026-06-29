@@ -26,10 +26,7 @@ alongside `SPEC.md` (firmware behaviour) and `../provisioning/PROVISIONING_SPEC.
 - **Key HW learnings:** board subscribes `ota/data`/`ota/cmd` at **QoS0** → individual
   chunks AND the command can drop → publisher resends `cmd` till acked + the board NAKs
   missing chunks. Stream must be **paced to ~the 115200-baud UART rate** (~100-200ms per
-  1KB chunk); pacing plus a large **RP2040 UART RX ring buffer** (`UART_RXBUF=8192`,
-  `ch9120.py` — default is only 256 B) keep the inbound byte stream from overrunning while
-  the firmware is busy writing a chunk to flash (the buffer is RP2040-side RAM, not on the
-  CH9120; ~6% of post-GC free heap, measured ~127 KB free on board 893922). `machine.reset()` on this board can drop
+  1KB chunk) or the CH9120 RX buffer overflows. `machine.reset()` on this board can drop
   USB-CDC until a cold BOOTSEL reflash — irrelevant to OTA (network), but it's why USB
   deploys are flaky; recover via flash_nuke + reflash + the resumable slot deploy.
 - **Remaining:** wire the integration `UpdateEntity` to drive OTA from the HA UI
