@@ -5,10 +5,10 @@ Nothing else in the firmware should hard-code these values.
 
 Note: the per-install values (broker IP/port, MQTT credentials, DHCP, board
 count, optional name overrides) are normally NOT hand-edited. The host-side
-wizard (../provisioning/provision.py) writes them into a machine-owned
+`oselia` tool (../provisioning/) writes them into a machine-owned
 `site.json` on the board, which config.py overlays on top of these defaults at
 import (see the overlay block at the bottom of src/config.py). Treat the values
-here as hardware defaults; let the wizard own the site-specific kernel. See
+here as hardware defaults; let the tool own the site-specific kernel. See
 ../provisioning/PROVISIONING_SPEC.md.
 """
 
@@ -109,12 +109,12 @@ DISCOVERY_PREFIX = "homeassistant"     # HA default
 # triggers, the original), or "both". "both" doubles discovery traffic on connect.
 INPUT_DISCOVERY = "both"
 
-# Which HA integration consumes this device: "mqtt" (firmware publishes HA MQTT
-# discovery; device shows under the MQTT integration -- the default) or "oselia" (the
-# first-party OSELIA custom integration owns the entities; firmware skips publishing
-# discovery). Data/command topics are identical either way. Set via `provision.py
-# --oselia`. See homeassistant/INTEGRATION_SPEC.md.
-HA_INTEGRATION = "mqtt"
+# Which HA integration consumes this device: "oselia" (the first-party OSELIA custom
+# integration owns the entities; firmware skips publishing discovery -- the DEFAULT) or
+# "mqtt" (legacy: firmware publishes HA MQTT discovery; device shows under the MQTT
+# integration). Data/command topics are identical either way. The host tool always
+# provisions "oselia". See homeassistant/INTEGRATION_SPEC.md.
+HA_INTEGRATION = "oselia"
 
 # Friendly-name overrides keyed by (board, pin), both 1-based (pin 1..16).
 # Anything not listed defaults to "board<b>_input<p>". Example:
@@ -157,7 +157,7 @@ LOG_LEVEL = 2
 # counters, last input) so the customer sees basic parameters in the HA app.
 # Sending is gated in net_task so it NEVER delays a button publish (only sent when
 # the gesture queue is empty, at most every DIAG_INTERVAL_S). Turn OFF per install
-# via the wizard (`provision.py --no-diag` -> site.json "diag": false).
+# via the tool (`oselia provision --no-diag` -> site.json "diag": false).
 DIAG_ENABLE = True
 DIAG_INTERVAL_S = 10           # how often to refresh the diag/state snapshot
 # Two-way control: subscribe to <base>/<id>/cmd/# and expose HA `button` entities

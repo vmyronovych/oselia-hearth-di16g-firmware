@@ -174,7 +174,8 @@ records it as the `release_feed_error` attribute (+ a WARNING) instead of fallin
 **unconfigured** feed (no `CONF_RELEASE_URL`) sets the same attribute with a "feed not
 configured" message, so the dashboard renders a warning note (a self-hiding markdown card
 under the Firmware tile — `show_empty: false` so it shows only when `release_feed_error` is
-set; see `dashboards/generate.py:feed_error_note`) rather than a misleading "Up to date".
+set; see the `feed_error_note` card in `provisioning/oselia_provision/dashboard.py`) rather
+than a misleading "Up to date".
 `async_install` downloads the bundle and `async_run_ota` streams it over the integration's
 own broker connection — resending the QoS0 `cmd` until acked, pacing chunks to the CH9120
 UART rate (`OTA_CHUNK_DELAY`), and resending chunks the device NAKs (`ota/nak` →
@@ -238,13 +239,11 @@ to drive an incompatible board rather than mis-render it.
   @2x + logo + @2x, rasterised from `homeassistant/hearth_logo.svg`); see
   `brands/README.md` to submit. (HA serves brand images from the central CDN only — no
   local override — so the device-page logo appears once the PR merges.)
-- **Dashboard**: `dashboards/generate.py` builds the per-gateway Sections dashboard
-  `/oselia-hearth` (logo + status + inputs-by-board + controls) from the live registry
-  and pushes it via the WS API (one `gw-<id>` view per OSELIA gateway). Its
-  `build_config` / `push_config` are **reused by the provisioning wizard**
-  (`ha_setup.ensure_oselia_dashboard`), so `provision.py` (OSELIA mode, the default) and
-  a manual `generate.py` run produce the identical dashboard. `dashboards/oselia.yaml`
-  is a reference snapshot. The in-app logo is embedded as a data URI (no CDN needed).
+- **Dashboard**: the `oselia` host tool renders a per-gateway Sections dashboard
+  `/oselia-hearth` (logo + status + inputs-by-board + controls) as **YAML for manual
+  upload** — `oselia dashboard render --id <id>` (entity ids are deterministic, so no live
+  HA is needed). `dashboards/oselia-hearth.example.yaml` is a committed reference. The logo
+  is embedded as a data URI (no CDN needed). The tool does not push dashboards over the API.
 - **Quality scale**: target Silver (config flow, tests, unique ids, availability) for
   the credibility badge.
 
@@ -252,24 +251,22 @@ to drive an incompatible board rather than mis-render it.
 
 ## Migration from today's MQTT-discovery setup
 
-This integration **supersedes** firmware-published discovery and most of
-`provisioning/ha_setup.py`:
+This integration **supersedes** firmware-published discovery:
 
-- **Firmware** *(implemented)*: a `HA_INTEGRATION` config flag (`"mqtt"` default, or
-  `"oselia"`) gates whether the firmware publishes `homeassistant/.../config` payloads.
+- **Firmware** *(implemented)*: a `HA_INTEGRATION` config flag (`"oselia"` default, or the
+  legacy `"mqtt"`) gates whether the firmware publishes `homeassistant/.../config` payloads.
   In `"oselia"` mode `net_task` skips all `publish_*_discovery` calls but still
   subscribes to `…/cmd/#` and seeds `…/cfg`, so commands and the number/select state
   work unchanged. The data/command topics stay; `ha_discovery.py`'s *topic builders*
-  remain the contract, its *discovery publishers* are simply not called. Set per unit
-  OSELIA mode is now the **default**; pass `provision.py --mqtt` for the legacy path
-  (writes `site.json` `"ha_integration":"oselia"` for OSELIA, omits it for MQTT).
-  **Clear the retained discovery topics** on migration so HA's MQTT integration drops
-  the duplicate device — `provision.py --uninstall-ha` already does exactly this clear.
-- **Provisioning**: `provision.py --ha-setup` in OSELIA mode adds the OSELIA config
-  flow + entities and builds the `/oselia-hearth` dashboard (`ensure_oselia_dashboard`
-  reusing `dashboards/generate.py`); it does not add the HA MQTT integration. The legacy
-  `--mqtt` path still adds the MQTT integration + blueprint but no curated dashboard. The
-  per-unit `/hearth-di16g` dashboard builder has been removed from `ha_setup.py`.
+  remain the contract, its *discovery publishers* are simply not called. The `oselia` tool
+  always writes `site.json` `"ha_integration":"oselia"`. If migrating a unit that previously
+  ran MQTT-discovery mode, **clear its retained discovery topics** so HA's MQTT integration
+  drops the duplicate device (`oselia board exec` an empty-retained publish, or clear via
+  `mosquitto_pub`).
+- **Provisioning**: the host tool flashes/provisions the unit (always OSELIA mode) and does
+  **not** touch Home Assistant. The OSELIA integration is installed via HACS and configured
+  in HA (broker + firmware release feed); the dashboard is rendered with `oselia dashboard
+  render` and uploaded by hand.
 - **Docs**: update `homeassistant/README.md` and `firmware/CLAUDE.md`'s "Implementation
   status" to describe the integration as the HA front door.
 
