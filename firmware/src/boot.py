@@ -66,9 +66,13 @@ def _select_slot():
     return active
 
 
-def _bump_crash():
+def _bump_crash(exc_text=None):
     s = _read_state()
     s["crashes"] = int(s.get("crashes", 0)) + 1
+    if exc_text:
+        # Persist the traceback TAIL (exception type + message + innermost frame -- the most
+        # diagnostic part) so the app can surface it in telemetry on the recovered boot.
+        s["last_crash"] = exc_text[-200:]
     _write_state(s)
     return s["crashes"]
 
@@ -89,8 +93,15 @@ try:
 except SystemExit:
     pass                          # intentional drop to the REPL (safe mode)
 except Exception as _e:           # noqa: BLE001 - top-level guard for the boot path
-    sys.print_exception(_e)
-    _n = _bump_crash()
+    try:
+        import uio
+        _b = uio.StringIO()
+        sys.print_exception(_e, _b)
+        _txt = _b.getvalue()
+    except Exception:
+        _txt = None
+    sys.print_exception(_e)       # always to serial
+    _n = _bump_crash(_txt)
     print("boot: failure %d/%d" % (_n, _MAX_CRASHES))
     # Reset so the boot-confirm `tries` counter advances toward auto-revert; the sleep
     # leaves a window to interrupt over USB and recover by hand.

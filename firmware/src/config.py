@@ -207,6 +207,11 @@ DIAG_ENABLE = True
 DIAG_INTERVAL_S = 10           # how often to refresh the diag/state snapshot
 DIAG_FAULT_RING = 16           # recent[] fault-history length in the diag blob (one
                                # retained export then carries the fault timeline)
+# Metrics persistence across reboot (metrics.py/metrics_store.py): counters + boot_count +
+# last-crash survive via a flash file (power-loss durable) + RP2040 watchdog scratch (survives
+# a watchdog reset). Flash writes are rate-limited to limit wear.
+METRICS_STATE_PATH = "/metrics_state.json"
+METRICS_FLUSH_INTERVAL_MS = 300000     # 5 min between flash flushes (scratch updates faster)
 # Two-way control: subscribe to <base>/<id>/cmd/# and expose HA `button` entities
 # (Restart, Identify). Commands are handled on core1 after the gesture queue is
 # drained, so they never delay a button publish.
