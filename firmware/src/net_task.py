@@ -22,8 +22,23 @@ from mqtt_client import MQTTClient, MQTTError
 import ha_discovery as ha
 import diag
 import mcp_health
+import metrics_schema as S
 import clock
 import log
+
+
+def _verbose_fault(r):
+    """Map a metrics fault record {up,boot,component,code,detail[,board]} to the existing
+    verbose diag wire shape {ts,component,code,detail[,board],boot}. `ts` == uptime seconds
+    (unchanged meaning); `boot` is additive (HA ignores it until Stage 2)."""
+    if not r:
+        return None
+    out = {"ts": r.get("up", 0), "component": r.get("component", ""),
+           "code": r.get("code", ""), "detail": r.get("detail", ""),
+           "boot": r.get("boot", 0)}
+    if r.get("board") is not None:
+        out["board"] = r["board"]
+    return out
 
 try:
     import status_led
@@ -64,7 +79,7 @@ def _sleep_beat(shared, led, mono, ms):
         waited += 50
 
 
-def run(shared, queue, device_id):
+def run(shared, queue, device_id, mtr):
     # MCP topology is resolved by core0 (network-first boot); read it below after
     # the CH9120 link is up. Placeholders until then.
     n_boards = 0
@@ -427,10 +442,11 @@ def run(shared, queue, device_id):
     if cfg.CONTROL_ENABLE or cfg.OTA_ENABLE:
         client.set_message_handler(_on_message)
 
-    # Diagnostics telemetry state (all local to this core; no cross-core surface).
-    reconnects = 0
+    # Diagnostics telemetry state. Counters/ring live in the metrics registry (mtr); these
+    # are local loop helpers.
     last_gesture = ""
     diag_last_ms = 0
+    last_connected = False    # mqtt-disconnect edge -> counter + a fault on the timeline
     # Publish-on-change tracking so a fault surfaces in HA immediately (not up to
     # DIAG_INTERVAL_S later): core0 bumps these versions; we compare each pass.
     applied_change_ver = shared.mcp_change_version
@@ -463,6 +479,18 @@ def run(shared, queue, device_id):
         if _wdt is None and cfg.WDT_ENABLE and shared.ready and machine is not None:
             _wdt = machine.WDT(timeout=cfg.WDT_TIMEOUT_MS)
             log.info("watchdog armed (core1)")
+
+        # MQTT disconnect edge -> count + put a fault on the timeline (net faults were
+        # previously never recorded in recent[]). Cheap: reads the cached connected flag.
+        if last_connected and not client.connected:
+            _up = mono.ms() // 1000
+            mtr.inc(S.C_MQTT_DISC)
+            mtr.add_fault(_up, mtr.boot_count, "mqtt",
+                          mcp_health.CODE_MQTT_DISCONNECT, "broker link lost")
+            shared.note_fault({"ts": _up, "component": "mqtt",
+                               "code": mcp_health.CODE_MQTT_DISCONNECT,
+                               "detail": "broker link lost"})
+        last_connected = client.connected
 
         # ---- (re)connect ----
         if not client.connected:
@@ -531,7 +559,7 @@ def run(shared, queue, device_id):
                         diag.publish_diag_discovery(
                             client, cfg, device_id, settle_ms=_disc_settle)
                 if not first_connect:
-                    reconnects += 1
+                    mtr.inc(S.C_RECONNECTS)
                 first_connect = False
                 backoff = cfg.RECONNECT_BACKOFF_MIN_MS
                 shared.ready = True          # lets core0 arm the WDT
@@ -643,24 +671,47 @@ def run(shared, queue, device_id):
             boards_ok = snap.get("boards_ok", 0)
             health = mcp_health.health_summary(
                 h["ethernet"], h["mqtt"], boards_total, boards_ok)
-            counters = dict(snap.get("counters", {}))
-            counters["reconnects"] = reconnects
-            counters["dropped"] = queue.dropped
+            mem = gc.mem_free()
+            mtr.set_gauge(S.K_MEM, mem)
+            mtr.set_gauge(S.K_MEM_MIN, min(mtr.gauge(S.K_MEM_MIN, mem), mem))
+            reconnects = mtr.counter(S.C_RECONNECTS)
+            # Verbose counters keep the existing wire (Stage 1). The two net counters are
+            # additive -- HA ignores unknown keys until Stage 2 wires them.
+            counters = {
+                "bus_recoveries": mtr.counter(S.C_BUS_REC),
+                "mcp_resets": mtr.counter(S.C_MCP_RESET),
+                "reconnects": reconnects,
+                "dropped": queue.dropped,
+                "mqtt_disconnects": mtr.counter(S.C_MQTT_DISC),
+                "eth_link_losses": mtr.counter(S.C_ETH_LOSS),
+            }
+            recent = [_verbose_fault(r) for r in mtr.ring_items()]
+            lf = mtr.last_fault()
             state = diag.build_state(
                 cfg.SW_VERSION, now_ms // 1000, ip_display,
                 h["ethernet"], h["mqtt"], boards_total,
-                gc.mem_free(), reconnects, queue.dropped, last_gesture,
+                mem, reconnects, queue.dropped, last_gesture,
                 temp_c=temp_c, board_addrs=board_addrs,
                 hw=getattr(cfg, "HW_VERSION", None), reset_cause=shared.reset_cause,
                 health=health, boards_total=boards_total, boards_ok=boards_ok,
                 mcp=snap.get("mcp", []), counters=counters,
-                last_fault=snap.get("last_fault"), recent=snap.get("recent", []))
+                last_fault=_verbose_fault(lf), recent=recent)
+            # Additive new fields (verbose names; HA ignores until Stage 2). These let the
+            # bench verify persistence/crash without any HA change.
+            state["boot_count"] = mtr.boot_count
+            state["mem_free_min"] = mtr.gauge(S.K_MEM_MIN, mem)
+            _crash = mtr.crash()
+            if _crash:
+                state["last_crash"] = _crash
             try:
                 diag.publish_state(client, cfg, device_id, state)
                 diag_last_ms = now_ms
                 applied_change_ver = change_ver
                 last_eth_pub = h["ethernet"]
                 last_mqtt_pub = h["mqtt"]
+                # Persist counters/boot_count: scratch every publish (cheap), flash rate-limited.
+                mtr.checkpoint()
+                mtr.flush()
             except Exception as e:
                 log.error("diag publish failed: %s" % e, every_ms=5000, key="diag")
                 client.connected = False

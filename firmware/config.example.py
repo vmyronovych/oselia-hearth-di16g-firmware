@@ -162,6 +162,12 @@ LOG_LEVEL = 2
 # via the wizard (`provision.py --no-diag` -> site.json "diag": false).
 DIAG_ENABLE = True
 DIAG_INTERVAL_S = 10           # how often to refresh the diag/state snapshot
+DIAG_FAULT_RING = 16           # recent[] fault-history depth (also the metrics ring size)
+# Metrics persistence across reboot (see metrics.py / metrics_store.py): counters + boot_count
+# + last-crash survive a reboot via a flash file (power-loss durable) plus the RP2040 watchdog
+# scratch registers (survive a watchdog reset). Flash writes are rate-limited to limit wear.
+METRICS_STATE_PATH = "/metrics_state.json"
+METRICS_FLUSH_INTERVAL_MS = 300000     # 5 min between flash flushes (scratch is updated faster)
 # Two-way control: subscribe to <base>/<id>/cmd/# and expose HA `button` entities
 # (Restart, Identify). Commands are handled on core1 after the gesture queue is
 # drained, so they never delay a button publish.

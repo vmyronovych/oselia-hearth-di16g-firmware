@@ -33,9 +33,10 @@ from mcp23017 import MCP23017
 from debounce import Debouncer
 from press_detector import MultiChannelDetector
 import mcp_health
-from mcp_health import (BoardStatus, FaultRing, classify_oserror,
+from mcp_health import (BoardStatus, classify_oserror,
                         CODE_MCP_ABSENT, CODE_MCP_INIT_FAIL,
                         CODE_BUS_RECOVERED, CODE_MCP_RESET)
+import metrics_schema as S
 import clock
 import log
 
@@ -193,7 +194,7 @@ class _Slot:
             return edge
 
 
-def run(shared, queue):
+def run(shared, queue, mtr):
     mono = clock.from_utime()
 
     # Bring the bus up and resolve the board set HERE, on core 0, so the network
@@ -211,12 +212,13 @@ def run(shared, queue):
     slots = [_Slot(b + 1, addr, i2c) for b, addr in enumerate(mcp_addresses)]
     n_inputs = n * PINS_PER_CHIP
 
-    counters = {"bus_recoveries": 0, "mcp_resets": 0}
-    ring = FaultRing(cfg.DIAG_FAULT_RING)
     policy = mcp_health.RecoveryPolicy(
         cfg.MCP_RECOVERY_AFTER_FAILS, cfg.MCP_RECOVERY_MIN_INTERVAL_MS,
         getattr(cfg, "MCP_RECOVERY_MAX_INTERVAL_MS", None))
 
+    # Counters + the fault ring now live in the shared metrics registry (persists across
+    # reboot, one namespace). SharedState still carries the per-board health snapshot for the
+    # cross-core publish-on-change signal; the counters/recent[] are read from `mtr` by net_task.
     def _snapshot(now_ms):
         boards_ok = 0
         mcp = []
@@ -224,18 +226,15 @@ def run(shared, queue):
             if s.status.ok:
                 boards_ok += 1
             mcp.append(s.status.as_dict(now_ms))
-        return {
-            "mcp": mcp,
-            "boards_total": len(slots),
-            "boards_ok": boards_ok,
-            "counters": {"bus_recoveries": counters["bus_recoveries"],
-                         "mcp_resets": counters["mcp_resets"]},
-            "last_fault": ring.last(),
-            "recent": ring.recent(),
-        }
+        return {"mcp": mcp, "boards_total": len(slots), "boards_ok": boards_ok}
 
     def _fault(now_ms, code, detail, board=None):
-        rec = ring.add(now_ms // 1000, "mcp", code, detail, board)
+        up = now_ms // 1000
+        mtr.add_fault(up, mtr.boot_count, "mcp", code, detail, board)
+        # diag/event stream consumes a verbose record (ts/component/code/detail[/board]).
+        rec = {"ts": up, "component": "mcp", "code": code, "detail": detail}
+        if board is not None:
+            rec["board"] = board
         shared.note_fault(rec)
 
     def _all_ok():
@@ -249,13 +248,13 @@ def run(shared, queue):
         nonlocal i2c
         if level == 1:
             i2c = _bus_recover()
-            counters["bus_recoveries"] += 1
+            mtr.inc(S.C_BUS_REC)
             _fault(now_ms, CODE_BUS_RECOVERED, "L1 I2C bus reclock")
             log.warn("MCP recovery L1: I2C bus reclock", every_ms=2000, key="rec1")
         else:
             release_mcp_reset()
             i2c = _make_i2c()
-            counters["mcp_resets"] += 1
+            mtr.inc(S.C_MCP_RESET)
             _fault(now_ms, CODE_MCP_RESET, "L2 /RESET pulse")
             log.warn("MCP recovery L2: /RESET pulse", every_ms=2000, key="rec2")
         utime.sleep_ms(cfg.MCP_RESET_SETTLE_MS)   # let chip/bus settle before re-init

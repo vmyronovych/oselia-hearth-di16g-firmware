@@ -17,7 +17,15 @@ from shared_state import SharedState
 import input_task
 import net_task
 import mcp_select
+import metrics as metrics_mod
+import metrics_store
+import clock
 import log
+
+try:
+    import ujson as json
+except ImportError:
+    import json
 
 
 def _device_id():
@@ -69,7 +77,69 @@ def _reset_cause():
     return names.get(cause, "unknown")
 
 
+_OTA_STATE = getattr(cfg, "OTA_STATE_PATH", "/ota/state")
+
+
+def _build_metrics(mono):
+    """Construct the metrics registry + its persistent store. The store touches hardware
+    (watchdog scratch + flash); if anything is unavailable we degrade to an in-RAM registry
+    rather than fail boot -- metrics must never break the product."""
+    store = None
+    try:
+        scratch = None
+        try:
+            scratch = metrics_store.ScratchStore()
+        except Exception:
+            scratch = None
+        flash = metrics_store.FlashStore(
+            getattr(cfg, "METRICS_STATE_PATH", "/metrics_state.json"))
+        store = metrics_store.PersistentStore(
+            scratch=scratch, flash=flash, clock_ms=mono.ms,
+            flush_interval_ms=getattr(cfg, "METRICS_FLUSH_INTERVAL_MS", 300000))
+    except Exception as e:
+        log.warn("metrics store unavailable (%s); telemetry not persisted" % e)
+        store = None
+    mtr = metrics_mod.Metrics(store=store,
+                              ring_size=getattr(cfg, "DIAG_FAULT_RING", 16),
+                              lock=_thread.allocate_lock())
+    try:
+        mtr.load()                       # restore counters/boot_count/ring; bumps boot_count
+    except Exception as e:
+        log.warn("metrics load failed: %s" % e)
+    return mtr
+
+
+def _surface_boot_crash(mtr, reset_cause):
+    """If boot.py recorded a crash (traceback excerpt in /ota/state), surface it as the
+    registry's last_crash so it rides out in telemetry. boot.py stays dependency-free; the
+    app side reads its file here. Best-effort -- never raises."""
+    try:
+        with open(_OTA_STATE) as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        return
+    lc = st.get("last_crash")
+    if not lc:
+        return
+    exc = lc if isinstance(lc, str) else lc.get("exc", "")
+    mtr.note_crash(0, 0, reset_cause, exc)      # crash boot/up unknown from boot.py
+    # Surface it only on the recovered boot: clear it so a stale crash isn't reported forever.
+    try:
+        import os
+        st.pop("last_crash", None)
+        with open(_OTA_STATE + ".tmp", "w") as f:
+            json.dump(st, f)
+        os.rename(_OTA_STATE + ".tmp", _OTA_STATE)
+    except OSError:
+        pass
+
+
 def main():
+    try:
+        import micropython
+        micropython.alloc_emergency_exception_buf(100)   # usable traceback from ISRs
+    except Exception:
+        pass
     log.set_level(cfg.LOG_LEVEL)
     _validate_config()
     device_id = _device_id()
@@ -96,13 +166,32 @@ def main():
     except ImportError:
         pass
 
+    # The single metrics registry both cores share (own namespace; persists across reboot;
+    # never freezes the loop -- see metrics.py). Built after the import warm-up so its
+    # clock/scratch/flash use of utime/machine doesn't race core1's spawn.
+    #
+    # CONTAINED: metrics must NEVER be able to crash boot. An uncaught error here would fall
+    # through to boot.py -> machine.reset(), and on THIS board a reset can DROP USB-CDC until a
+    # cold BOOTSEL reflash (OTA_SPEC.md). So on ANY failure we fall back to a pure in-RAM
+    # registry (no persistence) and keep booting -- telemetry degrades, the product does not.
+    try:
+        mono = clock.from_utime()
+        mtr = _build_metrics(mono)
+        _surface_boot_crash(mtr, shared.reset_cause)
+    except Exception as e:
+        try:
+            log.error("metrics setup failed; running in-RAM, no persistence: %s" % e)
+        except Exception:
+            pass
+        mtr = metrics_mod.Metrics()      # allocation-only; never touches hardware
+
     # Network FIRST: spawn core1 before any I2C work so the CH9120/MQTT bring-up is
     # never gated on the bus. core0 (input_task) then builds I2C, resolves the board
     # set, and publishes it via SharedState; core1 waits (bounded) for that before
     # its first discovery/diag publish. An MCP fault can no longer delay the network.
     def _net():
         try:
-            net_task.run(shared, queue, device_id)
+            net_task.run(shared, queue, device_id, mtr)
         except Exception as e:           # keep the failure visible; core0/WDT react
             log.error("net_task crashed: %s" % e)
 
@@ -114,7 +203,7 @@ def main():
 
     # Run the real-time input loop on core 0 (this thread) forever. It owns I2C +
     # board resolution + MCP recovery now.
-    input_task.run(shared, queue)
+    input_task.run(shared, queue, mtr)
 
 
 if __name__ == "__main__":
