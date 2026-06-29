@@ -19,8 +19,18 @@ the OTA bundle to the gateway over the local MQTT broker (`firmware/OTA_SPEC.md`
 `firmware/RELEASING.md`). An A/B slot layout with a boot-confirm gate means a bad build
 **auto-reverts** — an update can never strand a unit.
 
-What the rollout note must convey:
+**Lead with the consumer, then go technical.** Every PR body and release note must be
+ordered **non-technical first**: open with a plain-language description of *the problem this
+release solves for the user* and the outcome they get (no jargon, no file names), then the
+how-to-apply link — and only **after** that, a separate technical section (summary of
+changes, verification) for engineers. The bilingual rollout blocks below are the
+consumer-first part and go at the **top**; the technical detail goes underneath a
+`## Technical details` heading.
 
+What the consumer-first rollout note must convey:
+
+- **The problem and the outcome in plain words** — what was wrong / what gets better, framed
+  for a homeowner or installer, not a developer.
 - **Open the device in Home Assistant and click *Install* on the firmware update card.
   That's it** — HA downloads the bundle and applies it over the local broker; the device
   reboots into the new build and confirms itself once it's back online and healthy.
@@ -39,14 +49,19 @@ user and changes nothing about how to apply an update.
 
 The rollout section the user receives **must**:
 
-1. Be **two root-level collapsible `<details>` blocks, one per language, Ukrainian first**
+1. Come **first**, at the top of the PR body / release notes (before any technical
+   section). It is the consumer-facing part.
+2. Be **two root-level collapsible `<details>` blocks, one per language, Ukrainian first**
    (`<details open>`) and English second (`<details>`). GitHub-Flavored Markdown has no
    tabs; `<details>` is the native equivalent. There is **no** shared summary outside the
    blocks — a reader opens one block and has everything in their language.
-2. Contain, in each block: (a) the release's **issue/fix summary** in that language, then
-   (b) a **link to `UPGRADING.md`** for how to apply. The how-to-apply *steps* are not
-   repeated in the note — they live in the canonical `firmware/UPGRADING.md`. **Every
-   release note and PR body must carry this link.**
+3. Contain, in each block: (a) the release's **plain-language problem + outcome** in that
+   language (what gets better for the user, no jargon), then (b) a **link to `UPGRADING.md`**
+   for how to apply. The how-to-apply *steps* are not repeated in the note — they live in
+   the canonical `firmware/UPGRADING.md`. **Every release note and PR body must carry this
+   link.**
+4. Be followed by a `## Technical details` section (summary of changes + verification) for
+   engineers — never above the consumer blocks.
 
 `rollout-snippet.md` encodes this; fill only `<SUMMARY_UA>` / `<SUMMARY_EN>` with the
 per-release summary in each language. If you edit the snippet, preserve the layout and the

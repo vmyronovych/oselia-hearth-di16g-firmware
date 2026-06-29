@@ -1,8 +1,10 @@
 <!--
-Per-release rollout section for the PR body and release notes.
-Fill <SUMMARY_UA> / <SUMMARY_EN> with this release's issue/fix summary in each language,
-then paste this whole block in. The HOW-TO-APPLY steps are NOT duplicated here -- they live
-in the canonical firmware/UPGRADING.md, which every block links to. Keep the steps there.
+Per-release rollout section for the PR body and release notes. Goes FIRST (consumer-first),
+above any ## Technical details section.
+Fill <SUMMARY_UA> / <SUMMARY_EN> with this release's PLAIN-LANGUAGE problem + outcome in each
+language -- what was wrong / what gets better for a homeowner or installer, no jargon, no file
+names. Then paste this whole block in. The HOW-TO-APPLY steps are NOT duplicated here -- they
+live in the canonical firmware/UPGRADING.md, which every block links to. Keep the steps there.
 
 Layout: two root-level collapsible language blocks, Ukrainian first (`<details open>`),
 English second (`<details>`) -- GFM has no tabs; `<details>` is the equivalent. Each block:
