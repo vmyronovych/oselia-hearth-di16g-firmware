@@ -24,6 +24,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install mpy-cross (so the OTA .mpy bundle tests run, not skip)
+        run: pip install mpy-cross==1.27.0.post2
+
       - name: Syntax check (py_compile)
         # Compiles without importing. The OSELIA HA integration lives in its own repo
         # (vmyronovych/oselia-hearth-di16g-ha) and is validated there (hassfest + HACS).

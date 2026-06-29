@@ -45,6 +45,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install mpy-cross (emits .mpy v6.3, accepted by device MicroPython 1.28.0)
+        run: |
+          pip install mpy-cross==1.27.0.post2
+          python -m mpy_cross --version
+
       - name: Host tests (release gate)
         working-directory: firmware
         run: |

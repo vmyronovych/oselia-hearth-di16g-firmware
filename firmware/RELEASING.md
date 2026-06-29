@@ -49,7 +49,12 @@ or type a specific one (e.g. `fw-v0.1.2`). It:
 2. **stamps the version from the tag** into the bundled `config.py` (the tag is the
    single source of version truth — the device reports exactly this; `site.json` still
    overlays per-unit values),
-3. builds the OTA bundle + `manifest.json` with `tools/ota_build.py`,
+3. builds the OTA bundle + `manifest.json` with `tools/ota_build.py` — modules are
+   compiled to MicroPython bytecode (`.mpy`) before packaging, so the bundle is ~70%
+   smaller (fewer MQTT chunks → less loss exposure); the device imports `.mpy`
+   transparently and the on-device contract (manifest names + per-file/whole sha256) is
+   unchanged. The workflow pins `mpy-cross==1.27.0.post2` (emits `.mpy` v6.3, accepted by
+   the board's MicroPython 1.28.0). `--no-mpy` builds raw `.py` for local iteration.
 4. publishes a **GitHub Release** for the tag with both assets (auto-generated notes).
 
 The committed `src/config.py` `SW_VERSION` patch is just a base/dev default; releases

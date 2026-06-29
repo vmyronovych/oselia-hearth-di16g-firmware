@@ -26,7 +26,10 @@ alongside `SPEC.md` (firmware behaviour) and `../provisioning/PROVISIONING_SPEC.
 - **Key HW learnings:** board subscribes `ota/data`/`ota/cmd` at **QoS0** → individual
   chunks AND the command can drop → publisher resends `cmd` till acked + the board NAKs
   missing chunks. Stream must be **paced to ~the 115200-baud UART rate** (~100-200ms per
-  1KB chunk) or the CH9120 RX buffer overflows. `machine.reset()` on this board can drop
+  1KB chunk); pacing plus a large **RP2040 UART RX ring buffer** (`UART_RXBUF=8192`,
+  `ch9120.py` — default is only 256 B) keep the inbound byte stream from overrunning while
+  the firmware is busy writing a chunk to flash (the buffer is RP2040-side RAM, not on the
+  CH9120; ~6% of post-GC free heap, measured ~127 KB free on board 893922). `machine.reset()` on this board can drop
   USB-CDC until a cold BOOTSEL reflash — irrelevant to OTA (network), but it's why USB
   deploys are flaky; recover via flash_nuke + reflash + the resumable slot deploy.
 - **Remaining:** wire the integration `UpdateEntity` to drive OTA from the HA UI
@@ -116,6 +119,14 @@ already tell `net_task` exactly when "online + healthy" holds.
 1. Operator runs the host tool (LAN). It builds a **bundle** from `src/*.py` +
    `config.py`, computes per-file + whole-bundle sha256, serves it over a tiny HTTP
    server (numeric IP — no DNS), and publishes the OTA command to the broker.
+   **Modules are compiled to MicroPython bytecode (`.mpy`)** before packaging
+   (`tools/ota_build.py`, default; `--no-mpy` for raw `.py`): the bundle is ~70% smaller
+   → fewer chunks → less loss exposure, and the device imports `.mpy` transparently
+   (`boot.py` `import main`). The bundle format and on-device contract (manifest
+   `[[name,size,sha256],…]` + per-file/whole sha) are **unchanged** — only the file
+   `name`s carry a `.mpy` extension. The cross-compiler must emit a `.mpy` version the
+   interpreter accepts (v6.3 for MicroPython 1.23+, which the board's 1.28.0 uses);
+   `boot.py` (the root loader) is never bundled and stays `.py`.
 2. Device (`net_task`, subscribed to `…/ota/cmd`) receives the command, guards on
    version (no-op if already running target), publishes `…/ota/state` =
    `downloading` (**retained**, so observers see it's intentional not a crash).
@@ -206,7 +217,11 @@ already tell `net_task` exactly when "online + healthy" holds.
 - Loader (`boot.py`) and `site.json` are never in a bundle → unbrickable boot path
   and preserved identity/credentials.
 
-## Out of scope
+## Out of scope (deferred)
+- **gzip/deflate of the bundle.** `.mpy` already removes most of the bytes; gzipping the
+  `.mpy` bundle would shave a further ~40% but requires reworking the loss-tolerant
+  `OtaReceiver`, the streaming per-file `apply_bundle_file`, and the whole-bundle-sha
+  domain (decompress before parse). Revisit only if `.mpy` alone isn't small enough.
 - MicroPython interpreter / full UF2 OTA (needs a custom bootloader; physical BOOTSEL
   only for now).
 - TLS for the HTTP pull (LAN, plaintext; sha256 over MQTT command gives integrity,
