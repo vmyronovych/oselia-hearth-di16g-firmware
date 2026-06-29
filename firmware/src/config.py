@@ -21,6 +21,10 @@ SUBNET_MASK = (255, 255, 255, 0)
 CH9120_LOCAL_PORT = 1000       # CH9120 local source port (POC: 1000)
 UART_BAUD = 115200             # transparent-mode baud (config mode runs at 9600)
 UART_CONFIG_BAUD = 9600        # CH9120 serial-config-mode baud (per POC)
+UART_RXBUF = 8192              # RP2040 UART RX ring buffer (RAM, default 256). Sized so a
+                               # flash write during OTA can't overflow it: 8 KB ~= 700 ms of
+                               # slack at 115200 baud >> a chunk's flash-write time. Lives on
+                               # the RP2040, not the CH9120; ~6% of post-GC free heap.
 
 # ---------------------------------------------------------------------------
 # RP2040 pin map  (values CONFIRMED against the working POC unless noted)
