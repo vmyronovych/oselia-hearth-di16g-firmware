@@ -18,12 +18,13 @@ and log level). See `SPEC.md §5`.
 - `CLAUDE.md` — working agreement for implementing the firmware.
 - `config.example.py` — copy to `config.py` and edit pins / broker / timings / names.
 - `src/` — firmware modules (see `SPEC.md` §8).
-- `../provisioning/` — host-side installer wizard (USB) that configures a fresh
-  unit: `provision.py`, the installer guide `INSTALL.md`, and `PROVISIONING_SPEC.md`.
+- `../provisioning/` — the host-side **`oselia`** tool (USB): flashes MicroPython,
+  provisions a fresh unit, the board toolbox, and the dashboard YAML renderer. See its
+  `README.md` and `PROVISIONING_SPEC.md`.
 - `tests/` — host-runnable unit tests (CPython): detector, debounce, LED, queue,
   clock, MQTT packets/discovery, and diagnostics builders.
-- `../homeassistant/` — HA assets: the OSELIA integration + the `/oselia-hearth`
-  dashboard generator + the switch blueprint (set up by `provision.py --ha-setup`).
+- `../homeassistant/` — HA assets: the OSELIA integration design contract and the
+  `/oselia-hearth` dashboard example (render your own with `oselia dashboard render`).
 - `BRINGUP.md` — bench bring-up checklist (the physical/HA steps scripts can't do).
 - `FLASHING.md` — which MicroPython UF2 to flash on a new RP2040-ETH, and how.
 - `POC_NOTES.md` — POC-confirmed hardware facts + the manufactured-board pin/LED delta.

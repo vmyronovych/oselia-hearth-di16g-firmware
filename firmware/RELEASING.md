@@ -62,11 +62,9 @@ carry the tag version, so they can't drift.
 
 ## Home Assistant side
 
-**The provisioning wizard sets this up automatically.** `provision.py --oselia` adds the
-OSELIA integration to HA and configures the firmware release feed (and, for a private
-repo, the GitHub token). So a freshly provisioned unit is wired to the feed with no
-manual HA steps. To set/override it by hand: OSELIA → **Configure** → *Firmware release
-feed URL* (+ *GitHub token* for a private repo).
+The OSELIA integration (installed via HACS) carries the firmware release feed, configured
+in Home Assistant: OSELIA → **Configure** → *Firmware release feed URL* (+ *GitHub token*
+for a private repo). Set it once per HA install and every gateway picks up updates from it.
 
 **Public repo** — point the feed at the stable latest-release manifest (always resolves
 to the newest non-prerelease release's asset):

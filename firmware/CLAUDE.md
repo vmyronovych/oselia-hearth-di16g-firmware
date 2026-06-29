@@ -72,10 +72,10 @@ includes a **Home Assistant integration layer** (see SPEC.md §5.1a–5.4):
   `button`s and live-tune `number`/`select` (timings + log level), **persisted to
   `site.json`** and applied cross-core.
 - **CH9120 IP read-back** (`0x61`) so DHCP units self-report their leased IP.
-- Provisioning sets HA up over the **WebSocket** + REST APIs (`provisioning/ha_setup.py`,
-  `provision.py --ha-setup`): by default the OSELIA integration + the `/oselia-hearth`
-  dashboard (reusing `homeassistant/dashboards/generate.py`); legacy `--mqtt`
-  adds the MQTT integration + the switch blueprint instead.
+- The `oselia` host tool flashes/provisions the unit (always OSELIA mode -- the firmware
+  skips MQTT discovery). It does **not** push HA assets: the OSELIA integration is installed
+  via HACS and the `/oselia-hearth` dashboard is rendered with `oselia dashboard render` for
+  manual upload (`provisioning/oselia_provision/dashboard.py`).
 
 Keep the POC's proven MQTT wire format in `mqtt_packets` — it's the known-good
 reference. Any command/diagnostic publish must stay **behind the gesture-queue drain**

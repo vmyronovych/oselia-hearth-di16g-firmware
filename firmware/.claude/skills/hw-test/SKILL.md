@@ -21,10 +21,17 @@ before touching the board — never deploy code that fails it (CLAUDE.md).
 - Broker = this Mac, `192.168.1.104:1883`, no auth, Docker container `mosquitto`.
 - A local **Home Assistant** runs in Docker (`homeassistant`, `http://localhost:8123`,
   2025.11). A long-lived token is at `~/.config/oselia/ha_token` (outside the repo).
-- `MCP_AUTODISCOVER=True` and only board1 `@0x20` is wired, so the firmware advertises
-  **one** board: 48 device_automation configs (16×3) + 16 `event` entities + the
-  diagnostics/control entities (sensor/binary_sensor/button/number/select). With more
-  boards wired it scales 16×3 (+16 events) per board.
+- `MCP_AUTODISCOVER=True` and only board1 `@0x20` is wired, so when discovery is on the
+  firmware advertises **one** board: 48 device_automation configs (16×3) + 16 `event`
+  entities + the diagnostics/control entities (sensor/binary_sensor/button/number/select).
+  With more boards wired it scales 16×3 (+16 events) per board.
+- **`HA_INTEGRATION` defaults to `"oselia"`**, so a freshly flashed dev board (no
+  `site.json`) **skips publishing MQTT discovery** — `watch.sh discovery` shows nothing and
+  no device auto-appears under HA's MQTT integration (the OSELIA HACS integration owns the
+  entities instead). To bench-test the legacy MQTT-discovery path, set `HA_INTEGRATION =
+  "mqtt"` in `config.py` (or write `{"ha_integration":"mqtt"}` into the board's `site.json`)
+  before deploying. Data/command topics (`…/action`, `…/cmd/#`, `diag/state`) are identical
+  in both modes, so gesture/diag/control tests don't need discovery.
 - **Gestures need a physical 24 V switch press — you cannot actuate them.** Ask the
   user to press, and watch. (For wiring-independent checks you can publish to the
   action topic with `mosquitto_pub` to drive the HA `event` entity / a blueprint.)
@@ -54,11 +61,10 @@ before touching the board — never deploy code that fails it (CLAUDE.md).
   `offline→online` with `uptime_s` reset; a `number` change updates `…/cfg` and
   **survives a reboot** (clear the retained `cfg` first, then reboot, to prove it came
   from `site.json`). Re-tuning never needs a reflash.
-- Provisioning HA assets: `python3 ../provisioning/provision.py --ha-setup` sets up HA —
-  by default the OSELIA integration + the `/oselia-hearth` dashboard
-  (`ha_setup.ensure_oselia` + `ensure_oselia_dashboard`); legacy `--mqtt` installs the
-  MQTT integration + the switch blueprint (`ha_setup.run_setup`) over the HA WebSocket +
-  REST APIs.
+- HA integration + dashboard: the OSELIA custom integration is installed in HA via HACS and
+  configured there (it owns the entities; the firmware skips MQTT discovery in the default
+  `oselia` mode). The dashboard is rendered locally with `oselia dashboard render --id <id>`
+  and pasted into HA — the host tool no longer pushes HA assets.
 
 **Gesture test (needs the user)**
 - `tools/watch.sh actions 45`, and ask the user to press input N: one short tap

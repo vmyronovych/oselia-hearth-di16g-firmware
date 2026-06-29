@@ -159,7 +159,7 @@ already tell `net_task` exactly when "online + healthy" holds.
   swap. The HTTP client is a minimal `GET`/HTTP-1.0 reader over `UartStream`
   (reuse `net_stream.UartStream`, add a `read(n)`-driven body reader); parses
   status line + `Content-Length`.
-- `tools/deploy.sh` + `provisioning/provision.py`: install the loader at root and
+- `tools/deploy.sh` + `oselia provision`: install the loader at root and
   the app into `/slots/a/`, write `/ota/active=a`. (One-time layout change; this is
   the only place that changes how files land on the board.)
 

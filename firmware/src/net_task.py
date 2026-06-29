@@ -498,7 +498,7 @@ def run(shared, queue, device_id):
                     # homeassistant/.../config publishing is gated. The command
                     # subscribe and the cfg seed are NOT gated -- commands and the HA
                     # number/select state work in both modes. See INTEGRATION_SPEC.md.
-                    publish_disc = getattr(cfg, "HA_INTEGRATION", "mqtt") == "mqtt"
+                    publish_disc = getattr(cfg, "HA_INTEGRATION", "oselia") == "mqtt"
                     if publish_disc:
                         mode = getattr(cfg, "INPUT_DISCOVERY", "both")
                         if mode in ("trigger", "both"):
