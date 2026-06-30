@@ -99,14 +99,14 @@ and HA steps the scripts can't do (wiring, switch presses, HA UI).
 - [x] **MCP pull (I²C line):** disconnect SDA/SCL → read fails `EIO`, LED **yellow**
       fast-blink, board stays **online** (no reboot); reconnect → auto re-init within
       `MCP_HEALTHCHECK_MS`, back to **green**, presses resume. *(verified on hardware)*
-- [ ] **Ethernet pull / sustained outage:** unplug cable (or stop broker) → a missed
-      **PINGRESP** (keepalive liveness) declares the link dead within ~`MQTT_KEEPALIVE_S`*0.7
-      + `PING_RESPONSE_TIMEOUT_MS` (~26 s) → LED **red**, board stays up, reconnects via
-      CH9120 re-bring-up + exponential backoff (cap `RECONNECT_BACKOFF_MAX_MS`); replug →
-      back to **green**, discovery republished. The blocking reconnect keeps core1's
-      heartbeat ticking, so a long outage does **not** starve the watchdog. *(RE-VERIFY: the
-      `TCPCS`-pin path was removed — detection is now MQTT-keepalive-based.)*
-      *(verified: 0 `core1 stalled` warnings across a 32 s outage; was 6 before the fix)*
+- [x] **Ethernet pull / sustained outage:** unplug cable (or stop broker) → MQTT keepalive
+      (PINGREQ/PINGRESP) detects the dead link → LED **orange (MQTT down)** — **NOT red**: with
+      `TCPCS` disabled `eth_ok` stays True (link assumed up), so the outage presents as
+      MQTT-down. Board stays up, reconnects via CH9120 re-bring-up + exponential backoff (cap
+      `RECONNECT_BACKOFF_MAX_MS`); replug → back to **green**, unit re-online on the broker.
+      The blocking reconnect keeps core1's heartbeat ticking, so a long outage does **not**
+      starve the watchdog. *(verified on hardware: orange not red; no reboot; no `core1
+      stalled`; unit re-online after replug.)*
 - [x] **Watchdog:** suspend core1's WDT feed (host raw-REPL session) → board hard-resets at
       ~8 s; `machine.reset_cause()` reports `WDT_RESET`. *(verified on hardware)*
 

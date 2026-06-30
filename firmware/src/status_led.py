@@ -19,6 +19,11 @@ Subsystem keys + default priority (first = shown first when unhealthy):
     "mqtt"      -> broker session down  (orange, medium blink)
     "mcp"       -> MCP23017 not responding (yellow, fast blink)
 All healthy -> solid green. Activity -> brief white flash (overrides).
+
+NOTE: with TCPCS disabled (PIN_CH9120_TCPCS=None) eth_ok is assumed True, so the
+"ethernet"/red state is not reached in practice -- a link outage (cable OR broker) is
+detected via MQTT keepalive and shows as "mqtt"/orange. (red is reserved for a future
+TCPCS re-enable.)
 """
 
 # Base colours (full-scale 0..255; brightness is scaled at write time).
