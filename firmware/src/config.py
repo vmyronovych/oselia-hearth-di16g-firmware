@@ -105,7 +105,7 @@ DEVICE_ID = None               # None -> derive from unique_id() last 6 hex
 DEVICE_NAME = "Hearth"
 DEVICE_MODEL = "Hearth (DI16-G)"
 DEVICE_MANUFACTURER = "OSELIA"
-SW_VERSION = "0.8.0"
+SW_VERSION = "0.9.0"
 HW_VERSION = "DI16-G"                   # board model (shown as Hardware in HA)
 PROJECT_URL = "https://github.com/vmyronovych/oselia-hearth-di16g-firmware"  # HA discovery origin
 
@@ -217,11 +217,11 @@ DHCP_LEASE_SETTLE_MS = 4000
 # ---------------------------------------------------------------------------
 # Replaces the app .py files via an A/B slot layout with boot-confirm/auto-revert.
 # The interpreter itself is NOT updated over the air (physical BOOTSEL only). The
-# loader (/boot.py) and /site.json are never part of a bundle, so OTA can't brick the
+# loader (/main.py) and /site.json are never part of a bundle, so OTA can't brick the
 # boot path or lose identity. Bytes stream as chunks over the live broker session.
 OTA_ENABLE = True
 OTA_MAX_BOOT_TRIES = 2          # boots a pending build gets to prove itself before
-                               # auto-revert (MUST match _MAX_TRIES in boot.py)
+                               # auto-revert (MUST match _MAX_TRIES in main.py loader)
 OTA_BOOT_CONFIRM_MS = 20000    # how long MQTT-online + all-healthy before confirm()
 OTA_CHUNK_SIZE = 1024          # bytes per ota/data chunk (must match the publisher)
 OTA_NAK_STALL_MS = 1500        # no chunk for this long -> NAK the still-missing ones

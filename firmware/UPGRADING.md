@@ -5,6 +5,22 @@ here. Firmware ships **over Ethernet** through the OSELIA Home Assistant integra
 USB, no tools. For almost everyone an update is one click; the notes below also cover what
 happens under the hood and the rare recovery case.
 
+> <a name="migrate-0-9-0"></a>**⚠️ One-time exception — moving to 0.9.0 (USB) · Перехід на 0.9.0 (одноразово, через USB)**
+>
+> 🇬🇧 **0.9.0 is the only release that must be applied over USB, not from Home Assistant.**
+> It rebuilds the gateway's start-up so USB stays reliable, and that part lives outside the
+> over-the-air update — so a unit on an older version must be **re-provisioned over USB once**
+> (`oselia provision`). If you click *Install* in HA for 0.9.0 it safely rolls back and stays
+> on the old version. **From 0.9.0 onward, normal one-click HA updates work again.** Newly
+> shipped units already have 0.9.0 and need nothing.
+>
+> 🇺🇦 **0.9.0 — єдиний реліз, який треба встановити через USB, а не з Home Assistant.**
+> Він перебудовує запуск шлюзу, щоб USB працював надійно, і ця частина не передається «по
+> повітрю» — тож пристрій зі старою версією треба **один раз переобладнати через USB**
+> (`oselia provision`). Якщо натиснути *Встановити* в HA для 0.9.0, оновлення безпечно
+> відкотиться і залишиться стара версія. **Починаючи з 0.9.0, звичайні оновлення в один клік
+> через HA знову працюють.** Нові пристрої вже йдуть з 0.9.0 — робити нічого не треба.
+
 <details open>
 <summary><b>🇺🇦 Українською</b></summary>
 

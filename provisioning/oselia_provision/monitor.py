@@ -23,17 +23,20 @@ from . import board, console
 # uncoloured (the common case) so only WARN/ERROR/DEBUG stand out.
 _LOG_COLORS = {"E": "\x1b[31m", "W": "\x1b[33m", "D": "\x1b[2m"}
 
-# Launch the app exactly as the OTA loader does (honouring slot selection / boot-confirm)
-# but FROM a held mpremote session, so USB stays enumerated through net_task's boot.
+# Launch the app exactly as MicroPython would at startup -- run the root loader top-level
+# (it does slot selection / boot-confirm, then `import app; app.main()`) -- but FROM a held
+# mpremote session, so USB stays enumerated through net_task's boot. The loader is main.py
+# (legacy boards may still have boot.py); exec it rather than import, since it runs at
+# module top level and has no main() of its own.
 _MONITOR_LAUNCH = (
     "import os\n"
     "_r = os.listdir('/')\n"
-    "if 'boot.py' in _r:\n"
+    "if 'main.py' in _r:\n"
+    "    exec(open('/main.py').read())\n"
+    "elif 'boot.py' in _r:\n"
     "    exec(open('/boot.py').read())\n"
-    "elif 'main.py' in _r:\n"
-    "    __import__('main').main()\n"
     "else:\n"
-    "    print('monitor: no boot.py/main.py on the board -- provision it first')\n"
+    "    print('monitor: no main.py/boot.py on the board -- provision it first')\n"
 )
 
 
@@ -160,7 +163,7 @@ def _wait_for_board(timeout=30):
 # ---------------------------------------------------------------------------
 def stream_held(port, colorize=True):
     """Relay a held `mpremote ... resume exec` session that runs the loader. `resume` => NO
-    soft reset (a soft reset auto-runs /boot.py and the firmware's non-returning main()
+    soft reset (a soft reset auto-runs /main.py and the firmware's non-returning main()
     blocks raw-REPL entry); we enter the raw REPL on the idle board and run the loader
     ourselves, streaming. Ctrl-C leaves the board at the REPL."""
     cmd = ["mpremote", "connect", port, "resume", "exec", _MONITOR_LAUNCH]

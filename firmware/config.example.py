@@ -170,10 +170,10 @@ CONTROL_ENABLE = True
 DHCP_LEASE_SETTLE_MS = 4000
 
 # OTA application updates over MQTT (A/B slots + boot-confirm/auto-revert). The
-# interpreter is not updated OTA; the loader (/boot.py) + /site.json are never bundled
+# interpreter is not updated OTA; the loader (/main.py) + /site.json are never bundled
 # so OTA can't brick the boot path. See OTA_SPEC.md.
 OTA_ENABLE = True
-OTA_MAX_BOOT_TRIES = 2          # boots to prove a new build (MUST match boot.py)
+OTA_MAX_BOOT_TRIES = 2          # boots to prove a new build (MUST match main.py loader)
 OTA_BOOT_CONFIRM_MS = 20000    # MQTT-online + healthy this long -> confirm the build
 OTA_CHUNK_SIZE = 1024          # bytes per ota/data chunk (must match the publisher)
 OTA_NAK_STALL_MS = 1500        # no chunk for this long -> NAK still-missing chunks

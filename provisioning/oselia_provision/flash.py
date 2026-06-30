@@ -84,7 +84,7 @@ def flash_micropython(mpy_uf2, port, erase_uf2=None, wipe=False):
     wipe=True first erases the WHOLE flash (flash_nuke) so the board boots to a clean bare
     REPL -- use it on the BOOTSEL/acquire path (no REPL to park a prior OTA app; a preserved
     old firmware can wedge USB on boot). On the upgrade path the caller already quiesced
-    /boot.py, so pass wipe=False and littlefs (site.json) is preserved."""
+    the /main.py loader, so pass wipe=False and littlefs (site.json) is preserved."""
     image = uf2.resolve_mpy(mpy_uf2)
     if not image:
         console.die("No MicroPython UF2 available to flash.")

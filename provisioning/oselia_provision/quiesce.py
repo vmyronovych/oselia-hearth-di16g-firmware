@@ -59,19 +59,24 @@ def disable_app(port):
 
 
 def restore_app(port, quiesced):
-    """Undo disable_app. If a loader is present (firmware.deploy reinstalled /boot.py) the
-    parked backup is obsolete -> drop it. Otherwise rename the parked entry back so the
-    board still boots its existing app."""
+    """Undo disable_app. If a current entry is present (firmware.deploy reinstalled the
+    /main.py loader) the parked backup is obsolete -> drop it. Otherwise rename the parked
+    entry back so the board still boots its existing app.
+
+    The loader is now /main.py, so a freshly deployed board has main.py present and the
+    backup should be dropped; a board where deploy did NOT run (early exit) has main.py
+    parked as main.py.provbak -> restore it. Both legacy boot.py.provbak and main.py.provbak
+    are handled so a unit mid-migration off the old boot.py layout recovers cleanly."""
     if not quiesced:
         return
     script = ("import os\n"
               "_l = os.listdir()\n"
-              "_loader = 'boot.py' in _l\n"
+              "_have_entry = 'main.py' in _l\n"  # a fresh loader is present -> backups obsolete
               "for _bak in ('boot.py.provbak', 'main.py.provbak'):\n"
               "    if _bak not in _l:\n"
               "        continue\n"
               "    try:\n"
-              "        if _loader:\n"
+              "        if _have_entry:\n"
               "            os.remove(_bak)\n"
               "        else:\n"
               "            os.rename(_bak, _bak[:-8])\n"   # _bak[:-8] strips '.provbak'

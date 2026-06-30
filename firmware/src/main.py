@@ -1,121 +1,109 @@
-"""Entry point: dual-core orchestration.
+"""Root entry / OTA loader -- the board's main.py, run by MicroPython at startup.
 
-  Core 1 (spawned thread): net_task.run  -- CH9120 link, MQTT, discovery, LED,
-      drains the event queue.
-  Core 0 (this thread):    input_task.run -- MCP23017 IRQ, debounce, gesture
-      detection, pushes events to the queue, owns the watchdog.
+Installed ONCE via USB (provisioning); it is NEVER part of an OTA bundle, so no update
+can brick the boot path. Deliberately self-contained (no app imports until it launches
+the slot) and tiny.
 
-They communicate only through a thread-safe EventQueue (gestures) and a lock-guarded
-SharedState (health + heartbeat). See SPEC.md sec.3a (concurrency) and sec.12
-(robustness).
+Why the loader lives in main.py (and there is NO boot.py): on the rp2 port MicroPython
+initialises USB-CDC (mp_usbd_init) *between* boot.py and main.py (ports/rp2/main.c).
+This loader runs the app's main() forever and never returns, so anything placed in
+boot.py would run BEFORE USB-CDC exists and the port's init would never be reached -- a
+normally-running unit would expose no USB serial (reachable only after a crash). As
+main.py, the port brings USB-CDC up natively just before we run, so the board is always
+reachable over USB while the app runs.
+
+Responsibilities (OTA_SPEC.md "Boot-confirm / auto-revert"):
+  1. read /ota/state, run the boot-confirm gate (revert a build that never proved
+     itself after _MAX_TRIES boots),
+  2. put the chosen slot first on sys.path,
+  3. import + run the app's main() from that slot (/slots/<slot>/app.py).
+
+On an app crash it bumps a failure counter and resets (which advances the boot-confirm
+`tries` -> a persistently-broken OTA build auto-reverts to the previous slot). But
+after _MAX_CRASHES consecutive failures with NO slot booting cleanly, it stops and
+drops to the REPL so the board stays reachable over USB for recovery instead of
+reset-looping forever. The app clears the failure counter once it reaches the network
+(net_task, first connect). The boot-confirm logic here mirrors ota.boot_decision (kept
+dependency-free on purpose); change both together.
 """
-import _thread
+import sys
 
-import config as cfg
-from event_queue import EventQueue
-from shared_state import SharedState
-import input_task
-import net_task
-import mcp_select
-import log
+try:
+    import ujson as json
+except ImportError:
+    import json
+
+_STATE = "/ota/state"
+_MAX_TRIES = 2          # must match config OTA_MAX_BOOT_TRIES
+_MAX_CRASHES = 4        # consecutive boot failures before dropping to REPL (recovery)
 
 
-def _device_id():
-    if cfg.DEVICE_ID:
-        return cfg.DEVICE_ID
+def _read_state():
+    try:
+        with open(_STATE) as f:
+            s = json.load(f)
+        if isinstance(s, dict) and "active" in s:
+            return s
+    except (OSError, ValueError):
+        pass
+    return {"active": "a", "previous": "a", "pending": False, "tries": 0}
+
+
+def _write_state(s):
+    try:
+        import os
+        with open(_STATE + ".tmp", "w") as f:
+            json.dump(s, f)
+        os.rename(_STATE + ".tmp", _STATE)
+    except OSError as e:
+        print("boot: state write failed:", e)
+
+
+def _select_slot():
+    s = _read_state()
+    active = s.get("active", "a")
+    if s.get("pending"):
+        tries = int(s.get("tries", 0)) + 1
+        if tries > _MAX_TRIES:
+            active = s.get("previous", active)
+            s.update(active=active, pending=False, tries=0)
+            print("boot: build failed to confirm -> AUTO-REVERT to slot", active)
+        else:
+            s["tries"] = tries
+            print("boot: pending slot %s, try %d/%d" % (active, tries, _MAX_TRIES))
+        _write_state(s)
+    return active
+
+
+def _bump_crash():
+    s = _read_state()
+    s["crashes"] = int(s.get("crashes", 0)) + 1
+    _write_state(s)
+    return s["crashes"]
+
+
+try:
+    # Safe-mode gate: if the last few boots all failed and nothing has cleared the
+    # counter (the app never reached the network), stop reset-looping and stay at the
+    # REPL so the board can be recovered over USB.
+    if int(_read_state().get("crashes", 0)) >= _MAX_CRASHES:
+        print("boot: %d consecutive failures -> SAFE MODE (REPL). Recover over USB; "
+              "clear /ota/state 'crashes' to retry." % _MAX_CRASHES)
+        raise SystemExit
+    _slot = _select_slot()
+    sys.path.insert(0, "/slots/" + _slot)
+    print("boot: running app from slot", _slot)
+    import app
+    app.main()
+except SystemExit:
+    pass                          # intentional drop to the REPL (safe mode)
+except Exception as _e:           # noqa: BLE001 - top-level guard for the boot path
+    sys.print_exception(_e)
+    _n = _bump_crash()
+    print("boot: failure %d/%d" % (_n, _MAX_CRASHES))
+    # Reset so the boot-confirm `tries` counter advances toward auto-revert; the sleep
+    # leaves a window to interrupt over USB and recover by hand.
+    import time
     import machine
-    import ubinascii
-    return ubinascii.hexlify(machine.unique_id()).decode()[-6:].upper()
-
-
-def _validate_addresses(addrs, what="MCP_ADDRESSES"):
-    assert 1 <= len(addrs) <= mcp_select.MAX_BOARDS, \
-        "%s: 1..%d chips" % (what, mcp_select.MAX_BOARDS)
-    assert len(set(addrs)) == len(addrs), what + " must be distinct"
-    for a in addrs:
-        assert mcp_select.MCP_ADDR_MIN <= a <= mcp_select.MCP_ADDR_MAX, \
-            "MCP address 0x%02x out of 0x20..0x27" % a
-
-
-def _validate_config():
-    assert len(cfg.BROKER_IP) == 4, "BROKER_IP must be a 4-tuple (numeric, no DNS)"
-    assert 1 <= cfg.BROKER_PORT <= 65535, "BROKER_PORT out of range"
-    for name in ("LOCAL_IP", "GATEWAY", "SUBNET_MASK"):
-        assert len(getattr(cfg, name)) == 4, name + " must be a 4-tuple"
-    assert cfg.WDT_TIMEOUT_MS <= 8388, "RP2040 WDT max is ~8388 ms"
-    assert cfg.CORE1_STALL_MS < cfg.WDT_TIMEOUT_MS, \
-        "CORE1_STALL_MS must be < WDT_TIMEOUT_MS"
-    assert cfg.EVENT_QUEUE_SIZE >= 1
-    _validate_addresses(cfg.MCP_ADDRESSES)   # the explicit / fallback list
-
-
-def _reset_cause():
-    """Why we last booted, as a name for the diag blob ("power_on"|"wdt"|"soft"|...).
-    A `wdt` value is the direct answer to "did the watchdog reboot the Hearth?".
-    Best-effort: ports that don't implement machine.reset_cause() -> "unknown".
-    HW-VERIFY: confirm the rp2 build reports WDT_RESET after a forced stall."""
-    try:
-        import machine
-        cause = machine.reset_cause()
-    except Exception:
-        return "unknown"
-    names = {}
-    for attr, name in (("PWRON_RESET", "power_on"), ("WDT_RESET", "wdt"),
-                       ("HARD_RESET", "hard"), ("SOFT_RESET", "soft"),
-                       ("DEEPSLEEP_RESET", "deepsleep")):
-        v = getattr(machine, attr, None)
-        if v is not None:
-            names[v] = name
-    return names.get(cause, "unknown")
-
-
-def main():
-    log.set_level(cfg.LOG_LEVEL)
-    _validate_config()
-    device_id = _device_id()
-    log.info("OSELIA Hearth %s id=%s" % (cfg.SW_VERSION, device_id))
-
-    lock = _thread.allocate_lock()
-    shared = SharedState(_thread.allocate_lock())
-    # Seed live-tunable timings from config BEFORE core1 spawns, so both cores agree
-    # on the initial values with no startup race (core1 may publish/handle commands).
-    shared.init_tunables(cfg.LONG_MS, cfg.DOUBLE_GAP_MS, cfg.DEBOUNCE_MS)
-    shared.set_reset_cause(_reset_cause())
-    queue = EventQueue(cfg.EVENT_QUEUE_SIZE, lock)
-
-    # Warm up modules that are otherwise imported lazily at runtime, BEFORE
-    # starting core1. The RP2040 import lock + GIL deadlock if both cores `import`
-    # at the same instant; after spawning, input_task's clock.from_utime -> import
-    # utime would race net_task's status_led `import neopixel`. Importing them here
-    # on the main thread removes the race.
-    # HW-VERIFY: confirmed on hardware -- without this, boot hangs (core1 never
-    # reaches "configuring CH9120...").
-    import utime                          # noqa: F401  (clock.from_utime, both cores)
-    try:
-        import neopixel                   # noqa: F401  (status_led lazy import, core1)
-    except ImportError:
-        pass
-
-    # Network FIRST: spawn core1 before any I2C work so the CH9120/MQTT bring-up is
-    # never gated on the bus. core0 (input_task) then builds I2C, resolves the board
-    # set, and publishes it via SharedState; core1 waits (bounded) for that before
-    # its first discovery/diag publish. An MCP fault can no longer delay the network.
-    def _net():
-        try:
-            net_task.run(shared, queue, device_id)
-        except Exception as e:           # keep the failure visible; core0/WDT react
-            log.error("net_task crashed: %s" % e)
-
-    try:
-        _thread.stack_size(16 * 1024)    # core1 does MQTT/JSON; default is tight
-    except Exception:
-        pass
-    _thread.start_new_thread(_net, ())
-
-    # Run the real-time input loop on core 0 (this thread) forever. It owns I2C +
-    # board resolution + MCP recovery now.
-    input_task.run(shared, queue)
-
-
-if __name__ == "__main__":
-    main()
+    time.sleep(3)
+    machine.reset()

@@ -187,8 +187,8 @@ the board; the WDT guards the network core.) So the wizard first tries a
 unit on the network (mDNS / LAN scan → the single `online` device on `<base>/+/status`,
 without touching USB so the unit's MQTT session stays alive) and publishes
 `<base>/<id>/cmd/maintenance`. The **firmware** then renames its loader
-(`boot.py`→`boot.py.provbak`) and `machine.reset()`s **itself** — no host break-in, no
-watchdog race — so the board boots **bare** (no `main`, no WDT) with stable USB, ready to be
+(`main.py`→`main.py.provbak`) and `machine.reset()`s **itself** — no host break-in, no
+watchdog race — so the board boots **bare** (no app, no WDT) with stable USB, ready to be
 rewritten reliably. `_restore_app` reinstates the loader afterwards (same `.provbak` suffix).
 If the unit can't be targeted unambiguously (zero/multiple online, or an auth broker — no
 creds are known pre-quiesce), the wizard falls back to the USB-driven `_disable_app`, which
@@ -221,17 +221,17 @@ So a freshly provisioned unit is **OTA-ready out of the box**, the wizard lays d
 slot layout from `firmware/OTA_SPEC.md` rather than copying the app flat to root:
 
 ```
-/boot.py            loader (installed LAST; never part of an OTA bundle)
+/main.py            loader (installed LAST; never part of an OTA bundle)
 /site.json          per-unit config (above)
 /ota/state          fresh boot-confirm state {active:a, pending:false, ...}
-/slots/a/  <app>    all firmware src/*.py except boot.py
+/slots/a/  <app>    all firmware src/*.py except main.py (entry: app.py)
 ```
 
 `copy_firmware()` creates `/slots/a` + `/ota`, copies the app there, writes a fresh
-`/ota/state`, clears any old flat-layout root modules (so a re-provision **migrates**
-a pre-OTA unit onto slots), then installs `/boot.py` **last** — an interrupted copy
-leaves a stable REPL, not a boot.py reset loop. `_disable_app` parks whichever auto-run
-entry exists (`/boot.py` on a slot unit, else `/main.py`) before writing. After this,
+`/ota/state`, clears **all** old root `.py` modules (so a re-provision **migrates**
+a pre-OTA unit onto slots), then installs `/main.py` **last** — an interrupted copy
+leaves a bare REPL, not a boot loop. `_disable_app` parks the auto-run entry
+(`/main.py`, or a legacy `/boot.py`) before writing. After this,
 every firmware update goes over Ethernet from Home Assistant (`OTA_SPEC.md`,
 `../homeassistant/INTEGRATION_SPEC.md`) — USB is needed only for this
 first install.
@@ -334,8 +334,8 @@ enumerated) and launch the firmware *from* it, so it is never cold-booted.
   session** and relay its stdout live. The board is first quiesced to a bare, watchdog-free
   REPL (a reset to a *bare* board, not a flash; no `net_task`, so USB re-enumerates cleanly),
   its loader restored without resetting, then run via `mpremote connect <port> exec <loader>`.
-  The on-device launch runs the real `/boot.py` loader (honouring OTA slot selection /
-  boot-confirm), falling back to a flat-layout `main` at root. USB stays enumerated through
+  The on-device launch runs the real `/main.py` loader (honouring OTA slot selection /
+  boot-confirm), or a legacy `/boot.py` if present. USB stays enumerated through
   `net_task`'s boot, so the full bring-up is visible. Ctrl-C stops and leaves the board at the
   REPL (`oselia board reset` / power-cycle resumes autorun).
 - **`oselia monitor --passive`** — only **listen** to the board's current USB-CDC serial
@@ -372,7 +372,7 @@ the firmware, whose **watchdog** (core 0) resets it mid-`raw-REPL` — this corr
 just `mpremote fs cp` (`could not enter raw repl`) but equally the **version check** and
 the **`site.json` read-back**, since all three break into the REPL. So the wizard quiesces
 **once, up front** — right after acquiring the board, *before* any read or write: it parks
-the auto-run entry (`/boot.py` on an OTA-layout board, else `/main.py`) and hard-resets in
+the auto-run entry (`/main.py`, or a legacy `/boot.py`) and hard-resets in
 one exec (`_disable_app`) so the board boots to a **bare REPL** — no firmware, no watchdog
 — for the whole run. This makes re-provisioning an already-running unit as robust as
 provisioning a bare board. It restores the entry after `copy_firmware` (`_restore_app`,

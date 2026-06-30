@@ -300,7 +300,7 @@ re-subscribes every reconnect) and publishes HA **`button`** entities:
 |--------|---------------|--------|
 | Restart (`device_class: restart`) | `…/cmd/reboot` | `machine.reset()` (publishes `offline` first) |
 | Identify (`device_class: identify`) | `…/cmd/identify` | flash the status LED white ~3 s |
-| (maintenance — no HA entity) | `…/cmd/maintenance` | park the loader (`boot.py`→`boot.py.provbak`) + `machine.reset()` → boot **bare** (no `main`, no watchdog) |
+| (maintenance — no HA entity) | `…/cmd/maintenance` | park the loader (`main.py`→`main.py.provbak`) + `machine.reset()` → boot **bare** (no app, no watchdog) |
 
 The **maintenance** command is the cooperative provisioning quiesce (no HA button; sent by
 the `oselia` tool over the broker): it lets the host re-provision a **running** unit over USB

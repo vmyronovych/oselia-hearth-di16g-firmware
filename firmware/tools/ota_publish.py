@@ -39,11 +39,11 @@ def read_version(src):
 
 
 def build_bundle(src):
-    """All src/*.py EXCEPT boot.py (the loader is never part of a bundle)."""
+    """All src/*.py EXCEPT main.py (main.py is the loader, never part of a bundle)."""
     files = []
     for p in sorted(glob.glob(os.path.join(src, "*.py"))):
         name = os.path.basename(p)
-        if name == "boot.py":
+        if name == "main.py":
             continue
         with open(p, "rb") as f:
             files.append((name, f.read()))

@@ -187,7 +187,7 @@ self-abort a stalled download (today a dead publisher leaves it NAKing until a r
 
 ## OTA over the integration (original design notes)
 
-Reuses `OTA_SPEC.md`'s on-device core unchanged: `/boot.py` loader, `/slots/{a,b}`,
+Reuses `OTA_SPEC.md`'s on-device core unchanged: `/main.py` loader, `/slots/{a,b}`,
 `/ota/active`, the `pending`/`tries` boot-confirm + auto-revert, `site.json` never
 touched. The integration replaces the ad-hoc host tooling (`ota_publish.py`) with the
 HA-native flow:

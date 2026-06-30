@@ -113,7 +113,7 @@ All accept `--port` to target a specific board; otherwise the first MicroPython 
   in-place reflash keeps littlefs (site.json survives). A board that merely failed a
   version read is NEVER reflashed (that would wedge USB).
 - **Atomic site.json** (temp + rename on the board) and the **OTA A/B slot layout**
-  (`/slots/a` + `/boot.py` loader installed last + fresh `/ota/state`).
+  (`/slots/a` + `/main.py` loader installed last + fresh `/ota/state`).
 - **Serial-contention guard** (`board.lock_serial` + `board.check_port_free`): every
   command that touches USB takes a process-wide flock (`~/.cache/oselia/locks/serial.lock`)
   and an `lsof` preflight on the target port, so a second `oselia` (or a stray serial

@@ -390,7 +390,7 @@ def run(shared, queue, device_id):
 
     def _ota_confirm_if_healthy(now_ms):
         """Once the running build has been NETWORK-online for OTA_BOOT_CONFIRM_MS, clear
-        the boot-confirm pending flag so boot.py won't auto-revert it.
+        the boot-confirm pending flag so the main.py loader won't auto-revert it.
 
         Requires only mqtt+ethernet -- deliberately NOT mcp. As of 0.7.x a degraded MCP
         is a normal, reported, recoverable running state (the firmware is built to keep
@@ -474,7 +474,7 @@ def run(shared, queue, device_id):
                 shared.set_net(eth_ok=True, mqtt_ok=True)
                 client.publish(avail_topic, "online", retain=True)
                 if first_connect and cfg.OTA_ENABLE:
-                    # Reached the network -> this boot is good; clear boot.py's
+                    # Reached the network -> this boot is good; clear the main.py loader's
                     # consecutive-failure counter so its safe-mode gate resets.
                     try:
                         import ota as _ota
