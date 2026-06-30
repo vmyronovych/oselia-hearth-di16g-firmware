@@ -119,7 +119,7 @@ All under `BASE_TOPIC=hearth`, `base = hearth/<device_id>`.
 ```jsonc
 {
   "fw": "0.7.0", "hw": "DI16-G", "uptime_s": 5400, "ip": "192.168.1.200",
-  "reset_cause": "wdt",            // power_on | wdt | soft | hard | deepsleep | unknown
+  "reset_cause": "wdt",            // rp2: power_on | wdt | unknown ("wdt" also = any machine.reset())
   "health": "mcp_fault",           // ok | degraded | mcp_fault | net_fault
   "eth": true, "mqtt": true,
   "boards": 5,                     // resolved board count (= boards_total; input entities for all)

@@ -253,7 +253,8 @@ parameters in the Home Assistant app with no extra service. Built in `diag.py`
 | `last` | sensor | last published gesture, e.g. `b1/in3 single` |
 
 **Structured root-cause observability (fw ≥ 0.7.0).** `diag/state` is extended with
-`hw`, `reset_cause` (`power_on`/`wdt`/`soft`/…), `health` (`ok`/`degraded`/`mcp_fault`/
+`hw`, `reset_cause` (rp2: `power_on`/`wdt`/`unknown`; `wdt` also covers any `machine.reset()`),
+`health` (`ok`/`degraded`/`mcp_fault`/
 `net_fault`), `boards_total`/`boards_ok`, a per-board `mcp[]` array (`{board,addr,ok,
 code,detail,fails,last_ok_s,recoveries}`), a `counters` block (`bus_recoveries`,
 `mcp_resets`, `reconnects`, `dropped`), and a `last_fault` + bounded

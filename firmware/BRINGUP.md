@@ -107,7 +107,8 @@ and HA steps the scripts can't do (wiring, switch presses, HA UI).
       heartbeat ticking, so a long outage does **not** starve the watchdog. *(RE-VERIFY: the
       `TCPCS`-pin path was removed — detection is now MQTT-keepalive-based.)*
       *(verified: 0 `core1 stalled` warnings across a 32 s outage; was 6 before the fix)*
-- [ ] **Watchdog:** (optional) force a stall and confirm the board resets (~8 s).
+- [x] **Watchdog:** suspend core1's WDT feed (host raw-REPL session) → board hard-resets at
+      ~8 s; `machine.reset_cause()` reports `WDT_RESET`. *(verified on hardware)*
 
 > **Known limitation — MCP *power* loss can reboot the board.** Disconnecting an
 > I²C *line* degrades gracefully (above). But cutting an MCP's *power* while it stays

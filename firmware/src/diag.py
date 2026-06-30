@@ -38,7 +38,8 @@ def build_state(fw, uptime_s, ip, eth, mqtt, boards, mem_free,
     contract (older HA entities still read them). The keyword args carry the
     structured root-cause observability (schema in INTEGRATION_SPEC.md):
       hw           -- hardware version string.
-      reset_cause  -- "power_on"|"wdt"|"soft"|"unknown" (why we last booted).
+      reset_cause  -- "power_on"|"wdt"|"unknown" (why we last booted; on RP2040 "wdt" also
+                      covers any deliberate machine.reset(), not only a watchdog stall).
       health       -- "ok"|"degraded"|"mcp_fault"|"net_fault" (HA Diagnostics state).
       boards       -- resolved board count (input entities exist for all of them).
       boards_ok    -- how many are currently responding.

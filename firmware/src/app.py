@@ -50,10 +50,11 @@ def _validate_config():
 
 
 def _reset_cause():
-    """Why we last booted, as a name for the diag blob ("power_on"|"wdt"|"soft"|...).
-    A `wdt` value is the direct answer to "did the watchdog reboot the Hearth?".
-    Best-effort: ports that don't implement machine.reset_cause() -> "unknown".
-    HW-VERIFY: confirm the rp2 build reports WDT_RESET after a forced stall."""
+    """Why we last booted, as a name for the diag blob. On RP2040 only "power_on" and "wdt"
+    occur (SOFT_RESET/HARD_RESET aren't defined on this build). NOTE: machine.reset() is itself
+    implemented via the watchdog on RP2040, so "wdt" means EITHER a real watchdog stall OR any
+    deliberate machine.reset() (Restart / OTA / maintenance / crash-recovery) -- it is NOT a
+    reliable "did the watchdog catch a hang?" signal. Ports without reset_cause() -> "unknown"."""
     try:
         import machine
         cause = machine.reset_cause()
