@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oselia-provision"
+version = "0.1.0"
+description = "OSELIA Hearth (RP2040-ETH) provisioning + board toolbox"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Viktor Myronovych" }]
+dependencies = [
+    "typer>=0.12",
+    "mpremote>=1.20",
+    "PyYAML>=6",
+]
+
+[project.optional-dependencies]
+# mDNS broker/HA auto-discovery and the most reliable passive serial capture.
+# The tool degrades gracefully without these (manual entry / raw-tty read).
+discovery = ["zeroconf>=0.131"]
+serial = ["pyserial>=3.5"]
+all = ["zeroconf>=0.131", "pyserial>=3.5"]
+
+[project.scripts]
+oselia = "oselia_provision.cli:app"
+
+[tool.setuptools]
+packages = ["oselia_provision"]
+
+# Install editable (`pip install -e .`) so the pinned UF2 images in ../uf2 and the
+# firmware in ../../firmware/src resolve via the repo layout (see paths.py). A plain
+# wheel install still works for the board toolbox; flashing then needs --mpy-uf2 or a
+# download. Editable is the intended dev/installer path.

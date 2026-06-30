@@ -27,13 +27,16 @@ jobs:
       - name: Install mpy-cross (so the OTA .mpy bundle tests run, not skip)
         run: pip install mpy-cross==1.27.0.post2
 
+      - name: Install the provisioning tool (Typer CLI + its host-test deps)
+        # Editable install so `oselia_provision` imports and the new host tests run.
+        run: pip install -e provisioning
+
       - name: Syntax check (py_compile)
         # Compiles without importing. The OSELIA HA integration lives in its own repo
         # (vmyronovych/oselia-hearth-di16g-ha) and is validated there (hassfest + HACS).
         run: |
           python -m py_compile firmware/src/*.py firmware/config.example.py firmware/tools/*.py
-          python -m py_compile provisioning/*.py
-          python -m py_compile homeassistant/dashboards/*.py
+          python -m py_compile provisioning/oselia_provision/*.py
 
       - name: Firmware host tests
         working-directory: firmware

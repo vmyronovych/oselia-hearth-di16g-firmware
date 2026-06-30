@@ -29,12 +29,9 @@ UART_CONFIG_BAUD = 9600        # CH9120 serial-config-mode baud (per POC)
 PIN_CH9120_UART_ID = 1
 PIN_CH9120_TX = 20             # MCU TX -> CH9120 RXD   (POC: tx=Pin(20))
 PIN_CH9120_RX = 21             # CH9120 TXD -> MCU RX   (POC: rx=Pin(21))
-# CH9120 TCP-status pin. DISABLED (None): it was never HW-validated (the POC didn't use
-# it), and trusting it caused a false-"down" reconnect FLAP (connect -> publish -> forced
-# reconnect, repeatedly, which churned the broker status online/offline). Liveness now comes
-# from MQTT keepalive/PINGRESP + CONNACK (net_task / mqtt_client), which is HW-independent.
-# Set back to 17 only after verifying TCPCS polarity/timing on hardware.
-PIN_CH9120_TCPCS = None         # was 17 -- see note above (HW-VERIFY before re-enabling)
+# CH9120 TCP-status pin (GP17) -- DISABLED (None); it caused a reconnect flap. Liveness
+# comes from MQTT keepalive/PINGRESP instead (HW-independent).
+PIN_CH9120_TCPCS = None
 PIN_CH9120_CFG0 = 18           # LOW = config mode (POC: Pin(18))
 PIN_CH9120_RST = 19            # active LOW (POC: Pin(19))
 
@@ -55,14 +52,9 @@ I2C_FREQ = 50_000              # 50 kHz: generous rise-time margin for the long 
 # drives exactly the chips that respond (0x20..0x27) -- no count to configure, and
 # an unwired board simply isn't advertised (no permanent MCP fault). MCP_ADDRESSES
 # is then only the fallback used if a scan finds nothing. Set MCP_AUTODISCOVER=False
-# (the wizard's --boards / site.json board_count does this) to pin an exact list.
+# (`oselia provision --boards` / site.json board_count does this) to pin an exact list.
 MCP_AUTODISCOVER = True
 MCP_ADDRESSES = [0x20]         # fallback / explicit list (board1 = 0x20)
-# INT is NOT used: the firmware reads inputs by POLLING (MCP_POLL_MS). The shared
-# wired-OR INT line caused the original freeze + dropped-press faults, so it's
-# deliberately ignored -- GP22 and these settings are legacy/unused (no board change
-# needed; the physical line just goes unconnected in firmware).
-PIN_MCP_INT = None             # legacy: shared INT net (GP22). Unused under polling.
 PIN_MCP_RESET = 9              # board net RESET -> MCP /RESET (pin 18) on GP9.
                                # Driven HIGH (deasserted) at boot, pulsed LOW to reset
                                # the chips (boot + L2 recovery). None = tied high (POC).
@@ -105,7 +97,7 @@ DEVICE_ID = None               # None -> derive from unique_id() last 6 hex
 DEVICE_NAME = "Hearth"
 DEVICE_MODEL = "Hearth (DI16-G)"
 DEVICE_MANUFACTURER = "OSELIA"
-SW_VERSION = "0.8.0"
+SW_VERSION = "0.9.0"
 HW_VERSION = "DI16-G"                   # board model (shown as Hardware in HA)
 PROJECT_URL = "https://github.com/vmyronovych/oselia-hearth-di16g-firmware"  # HA discovery origin
 
@@ -120,14 +112,16 @@ INPUT_DISCOVERY = "both"
 # Which Home Assistant integration consumes this device:
 #   "mqtt"   -> the firmware publishes HA MQTT-discovery configs (homeassistant/.../
 #               config, retained); the device appears under HA's built-in MQTT
-#               integration. This is the original behaviour and the default.
+#               integration. Legacy: no longer the default, and the host tool no longer
+#               provisions it -- kept only so an explicit site.json override still works.
 #   "oselia" -> the firmware SKIPS publishing those discovery configs; the first-party
 #               OSELIA custom integration (its own repo, vmyronovych/oselia-hearth-di16g-ha)
 #               creates the entities itself, so the device appears under OSELIA, not MQTT.
+#               This is the DEFAULT.
 # The data + command topics are IDENTICAL in both modes -- only discovery publishing
-# differs -- so a unit can switch modes with no other change. Set per install via the
-# wizard (`provision.py --oselia`). See homeassistant/INTEGRATION_SPEC.md.
-HA_INTEGRATION = "mqtt"
+# differs -- so a unit can switch modes with no other change. Normally set per install by
+# the host tool (which always writes "oselia"). See homeassistant/INTEGRATION_SPEC.md.
+HA_INTEGRATION = "oselia"
 
 # Friendly-name overrides keyed by (board, pin), both 1-based (pin 1..16).
 # Anything not listed defaults to "board<b>_input<p>". Example:
@@ -196,7 +190,7 @@ LOG_LEVEL = 2
 # counters, last input) so the customer sees basic parameters in the HA app.
 # Sending is gated in net_task so it NEVER delays a button publish (only sent when
 # the gesture queue is empty, at most every DIAG_INTERVAL_S). Turn OFF per install
-# via the wizard (`provision.py --no-diag` -> site.json "diag": false).
+# via the tool (`oselia provision --no-diag` -> site.json "diag": false).
 DIAG_ENABLE = True
 DIAG_INTERVAL_S = 10           # how often to refresh the diag/state snapshot
 DIAG_FAULT_RING = 16           # recent[] fault-history length in the diag blob (one
@@ -215,11 +209,11 @@ DHCP_LEASE_SETTLE_MS = 4000
 # ---------------------------------------------------------------------------
 # Replaces the app .py files via an A/B slot layout with boot-confirm/auto-revert.
 # The interpreter itself is NOT updated over the air (physical BOOTSEL only). The
-# loader (/boot.py) and /site.json are never part of a bundle, so OTA can't brick the
+# loader (/main.py) and /site.json are never part of a bundle, so OTA can't brick the
 # boot path or lose identity. Bytes stream as chunks over the live broker session.
 OTA_ENABLE = True
 OTA_MAX_BOOT_TRIES = 2          # boots a pending build gets to prove itself before
-                               # auto-revert (MUST match _MAX_TRIES in boot.py)
+                               # auto-revert (MUST match _MAX_TRIES in main.py loader)
 OTA_BOOT_CONFIRM_MS = 20000    # how long MQTT-online + all-healthy before confirm()
 OTA_CHUNK_SIZE = 1024          # bytes per ota/data chunk (must match the publisher)
 OTA_NAK_STALL_MS = 1500        # no chunk for this long -> NAK the still-missing ones
@@ -231,7 +225,7 @@ OTA_STATE_PATH = "/ota/state"
 OTA_STAGING_PATH = "/ota/staging.bin"
 
 # ---------------------------------------------------------------------------
-# Installer overlay (generated by provision.py; do NOT hand-edit)
+# Installer overlay (generated by the `oselia` provisioning tool; do NOT hand-edit)
 # ---------------------------------------------------------------------------
 # The host-side wizard writes the small set of per-install values into a
 # machine-owned `site.json`. Everything above is fixed hardware defaults; the

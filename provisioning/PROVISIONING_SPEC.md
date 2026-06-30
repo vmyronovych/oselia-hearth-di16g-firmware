@@ -1,7 +1,7 @@
-# Installer Provisioning Spec — Host-Side USB Wizard
+# Installer Provisioning Spec — Host-Side `oselia` Tool
 
-Status: **implemented** (`provision.py`). This is the contract for how an
-installer brings a fresh Hearth online in a new house. It
+Status: **implemented** (the `oselia` tool, `provisioning/oselia_provision/`). This is the
+contract for how an installer brings a fresh Hearth online in a new house. It
 sits alongside `SPEC.md` (the firmware contract) and `BRINGUP.md` (the bench
 checklist). Where this document and `SPEC.md` disagree, `SPEC.md` wins for
 firmware behaviour; this document owns the *installer experience*.
@@ -18,8 +18,8 @@ firmware behaviour; this document owns the *installer experience*.
   "CH9120 Serial Control Instruction Set" and CONFIRMED on hardware (board leased an
   IP and reached the broker online with `USE_DHCP=True`). `src/config.py` now
   defaults to `USE_DHCP=True`. The static path (`--static`) is the fallback.
-- Host helpers are unit-tested (`tests/test_provision.py`,
-  `tests/test_config_overlay.py`); on-hardware bring-up remains to be confirmed.
+- Host helpers are unit-tested (`tests/test_oselia_*.py`,
+  `tests/test_config_overlay.py`); the flash path is hardware-confirmed.
 
 ---
 
@@ -81,12 +81,12 @@ Everything else is defaulted and **not** asked:
 
 ---
 
-## 3. The wizard (`provision.py`) — happy path
+## 3. Provisioning (`oselia provision`) — happy path
 
 Runs on the installer's laptop, drives the board over `mpremote`. One command:
 
 ```
-python3 provision.py
+oselia provision
 ```
 
 Step by step:
@@ -130,10 +130,10 @@ Step by step:
    - **Manual entry** (validated IPv4 / port) if both find nothing.
 
    Resolving a hostname the installer types is allowed *here* (the laptop has DNS)
-   as long as the value written to the board is the resolved numeric IP.
-   **Home Assistant discovery for `--ha-setup` works the same way** (`_home-assistant.
-   _tcp`, then a port-8123 scan verified by `GET /api/` → 401; one → auto, several →
-   choose, none → `broker-ip:8123`). `--broker` / `--ha-url` skip discovery.
+   as long as the value written to the board is the resolved numeric IP. `--broker`
+   skips discovery. (The same machinery also finds Home Assistant — `_home-assistant._tcp`,
+   then a port-8123 scan verified by `GET /api/` → 401 — surfaced by `oselia discover`,
+   not used by provisioning itself.)
 
 3. **Credentials.** `Broker username (blank for none):` then password
    (masked input). Blank → anonymous.
@@ -152,11 +152,11 @@ Step by step:
    end to end), and reset.
 
 7. **Confirm it came up.** Reset the board and watch the **broker** for the unit's retained
-   `online` — this is the authoritative check (network truth, independent of the USB serial,
-   which a cold boot can wedge on this board). On a broker-wait timeout, fall back to a
+   `online` — this is the authoritative check (network truth, independent of the USB serial).
+   On a broker-wait timeout, fall back to a
    best-effort serial capture + LED/serial classification. Report **PASS** when the broker
    shows `online` (or the serial confirms HA bring-up); report a specific **FAIL** otherwise.
-   (To *watch* the boot log live over USB, the installer runs `--monitor` separately — §6.3.)
+   (To *watch* the boot log live over USB, the installer runs `oselia monitor` separately — §6.2.)
    FAIL causes, mapped from the LED / serial:
    - red slow-blink → "Ethernet/TCP to broker is down — check cable / broker IP"
    - orange med-blink → "Reached the broker TCP port but MQTT login failed —
@@ -187,8 +187,8 @@ the board; the WDT guards the network core.) So the wizard first tries a
 unit on the network (mDNS / LAN scan → the single `online` device on `<base>/+/status`,
 without touching USB so the unit's MQTT session stays alive) and publishes
 `<base>/<id>/cmd/maintenance`. The **firmware** then renames its loader
-(`boot.py`→`boot.py.provbak`) and `machine.reset()`s **itself** — no host break-in, no
-watchdog race — so the board boots **bare** (no `main`, no WDT) with stable USB, ready to be
+(`main.py`→`main.py.provbak`) and `machine.reset()`s **itself** — no host break-in, no
+watchdog race — so the board boots **bare** (no app, no WDT) with stable USB, ready to be
 rewritten reliably. `_restore_app` reinstates the loader afterwards (same `.provbak` suffix).
 If the unit can't be targeted unambiguously (zero/multiple online, or an auth broker — no
 creds are known pre-quiesce), the wizard falls back to the USB-driven `_disable_app`, which
@@ -221,17 +221,17 @@ So a freshly provisioned unit is **OTA-ready out of the box**, the wizard lays d
 slot layout from `firmware/OTA_SPEC.md` rather than copying the app flat to root:
 
 ```
-/boot.py            loader (installed LAST; never part of an OTA bundle)
+/main.py            loader (installed LAST; never part of an OTA bundle)
 /site.json          per-unit config (above)
 /ota/state          fresh boot-confirm state {active:a, pending:false, ...}
-/slots/a/  <app>    all firmware src/*.py except boot.py
+/slots/a/  <app>    all firmware src/*.py except main.py (entry: app.py)
 ```
 
 `copy_firmware()` creates `/slots/a` + `/ota`, copies the app there, writes a fresh
-`/ota/state`, clears any old flat-layout root modules (so a re-provision **migrates**
-a pre-OTA unit onto slots), then installs `/boot.py` **last** — an interrupted copy
-leaves a stable REPL, not a boot.py reset loop. `_disable_app` parks whichever auto-run
-entry exists (`/boot.py` on a slot unit, else `/main.py`) before writing. After this,
+`/ota/state`, clears **all** old root `.py` modules (so a re-provision **migrates**
+a pre-OTA unit onto slots), then installs `/main.py` **last** — an interrupted copy
+leaves a bare REPL, not a boot loop. `_disable_app` parks the auto-run entry
+(`/main.py`, or a legacy `/boot.py`) before writing. After this,
 every firmware update goes over Ethernet from Home Assistant (`OTA_SPEC.md`,
 `../homeassistant/INTEGRATION_SPEC.md`) — USB is needed only for this
 first install.
@@ -285,141 +285,63 @@ Kept out of the interactive flow so the common case stays ≤3 questions:
 - `--no-diag` — disable diagnostics telemetry on the unit; writes `"diag": false`
   to `site.json` so the firmware publishes no `…/diag/state` and registers no HA
   diagnostic entities (`SPEC.md §5.2`). Default is on.
-- **HA integration mode** — the first-party **OSELIA integration** is now the
-  **default**; `--mqtt` opts into legacy MQTT discovery, `--oselia` selects OSELIA
-  explicitly (implicit; the two flags are mutually exclusive). OSELIA mode writes
-  `"ha_integration": "oselia"` to `site.json`, so the firmware skips publishing
-  `homeassistant/.../config` (the integration owns the entities; the device appears
-  under OSELIA, not the MQTT integration); `--mqtt` omits the key (firmware default).
-  The data/command topics are identical, so a unit can switch modes with no other
-  change. In OSELIA mode the wizard sets the integration up in HA automatically
-  (idempotent: adds it if absent, else updates its options + firmware release feed) and
-  (re)builds the `/oselia-hearth` dashboard. An explicit flag wins; otherwise a prior
-  choice recorded on the board is preserved across re-provisions; otherwise OSELIA
-  applies. HA setup follows the unit's **actual** `ha_integration` (from `site.json`),
-  not just this run's flag — so re-running the wizard on a legacy `--mqtt` unit keeps the
-  MQTT path rather than switching it. See
-  `../homeassistant/INTEGRATION_SPEC.md`.
-- HA setup is **prompted by default** once the unit is online (`Set up Home Assistant
-  now …? [Y/n]`). `--ha-setup` does it **without asking**; `--no-ha-setup` skips it
-  silently. With `--ha-url` (default: mDNS, then port-8123 scan, else
-  `http://<broker-ip>:8123`) and a long-lived token (`--ha-token`, else
-  `$OSELIA_HA_TOKEN`, else `~/.config/oselia/ha_token`, else prompted). The token is
-  **validated** first; a rejected/stale one re-prompts. See §6.1.
-- `--no-flash` — write config only, assume `src/*.py` already on the board.
+- `--no-flash` — write config only, assume the slot layout is already on the board.
 - `--dry-run` — show what would be written without touching the board.
+
+**Home Assistant is out of scope of provisioning.** Every unit is provisioned for the
+**OSELIA integration** (`site.json` always gets `"ha_integration": "oselia"`, so the
+firmware skips MQTT discovery — legacy `"mqtt"` mode is no longer provisioned). The tool
+does **not** touch HA: the OSELIA integration is installed via HACS and configured in HA
+(broker + firmware release feed), and the dashboard is rendered locally with `oselia
+dashboard render` for manual upload. See `../homeassistant/INTEGRATION_SPEC.md`.
 
 ---
 
-### 6.1 Home Assistant auto-setup (`--ha-setup`)
+### 6.1 Uninstall / decommission
 
-`ha_setup.py` sets HA up so the installer gets a working UI with no manual HA steps.
-What it installs depends on the unit's integration mode:
+Standalone subcommands (each runs, then exits):
 
-- **Locate HA** (both modes): `--ha-url` if given, else **mDNS** (`_home-assistant._tcp`)
-  on the LAN, else fall back to `http://<broker-ip>:8123` (HA co-located with the broker).
-- **OSELIA mode (default)** — `ensure_oselia` adds/updates the OSELIA config entry
-  (pointed at the same broker) and sets the firmware release feed (config/options flows
-  are **REST-only**). The feed URL and GitHub token resolve from `--release-url` /
-  `--github-token` (or `$OSELIA_GH_TOKEN` / `~/.config/oselia/gh_token`); when neither was
-  supplied and the run is **interactive**, the wizard stops and asks whether to provide
-  them (a token is required because the release repo is private), rather than silently
-  defaulting to a feed that 404s. Then `ensure_oselia_dashboard` (re)builds the shared
-  `/oselia-hearth` dashboard, reusing `dashboards/generate.py`'s `build_config` /
-  `push_config` so the wizard and a manual `generate.py` run produce the identical
-  dashboard. The freshly provisioned gateway joins as a `gw-<id>` Sections view (logo +
-  status + inputs-by-board + controls), built from the live device/entity registry. On
-  success the wizard prints a **clickable link** to `<ha>/oselia-hearth/gw-<id>` (where
-  the installer also names the switches on the device page). A soft-skip (no link) when
-  no OSELIA gateways are visible yet — re-running `--ha-setup` picks them up.
-- **Legacy `--mqtt` mode** — `run_setup` ensures HA's **MQTT integration** (check
-  `config_entries/get`; if no `mqtt` entry, add one via the config flow pointed at the
-  same broker, so a fresh HA ingests the unit's retained discovery and the device
-  appears) and installs the **switch blueprint** (`blueprint/save`, overwritten if
-  present). No curated dashboard — the device's entities are auto-created under the MQTT
-  integration. (The legacy per-unit `/hearth-di16g` dashboard builder has been removed.)
-
-Dashboard/blueprint installs are **WebSocket-API** operations (HA's REST `/api/` cannot
-install blueprints or dashboards), while config/options flows are REST-only; auth is the
-long-lived token throughout. The client is a minimal stdlib-only
-WebSocket implementation in `ha_setup.py` (no new dependency). It runs only after the
-unit is confirmed online, and a failure is reported but does **not** fail
-provisioning (the unit is already up).
-
-**Token resolution** (`provision.py`): `--ha-token` → `$OSELIA_HA_TOKEN` →
-`~/.config/oselia/ha_token` → otherwise the wizard **prompts** the installer (masked
-input) with instructions for creating one (profile → Security → Long-Lived Access
-Tokens), and offers to save it to `~/.config/oselia/ha_token` (chmod 600) for reuse.
-The token is never written to `site.json` (it is HA-side) and stays out of git.
-
-Robustness notes (validated by the clean-room test): the online-wait uses
-`keepalive=0` so the broker doesn't drop the watcher before a slow boot publishes
-`online`. The OSELIA dashboard is rebuilt from whichever gateways the integration has
-registered at that moment (`build_config` reads the live registry); if the just-
-provisioned unit hasn't registered yet, the build is **soft-skipped** (no link printed)
-and a re-run of `--ha-setup` — or a manual `generate.py` — picks it up.
-
-### 6.2 Uninstall / decommission
-
-Standalone modes (each runs, then exits — they bypass the normal flow):
-
-- **`--uninstall-firmware`** — delete every file from the board's littlefs (the
-  MicroPython interpreter stays), leaving a bare board (`_wipe_board`).
-- **`--erase-flash`** — erase the **entire** flash (MicroPython interpreter *and*
+- **`oselia wipe-fs`** — delete every file from the board's littlefs (the MicroPython
+  interpreter stays), leaving a bare board ready to re-provision.
+- **`oselia erase`** — erase the **entire** flash (MicroPython interpreter *and*
   filesystem) via Raspberry Pi's `flash_nuke.uf2`, leaving a **bare-metal** RP2040 in
-  BOOTSEL (`erase_flash`). Confirms first (irreversible); the UF2 comes from the bundled
-  `uf2/` (offline), else cache, else download (`FLASH_NUKE_URL`); `--erase-uf2 PATH`
-  overrides. Re-flash MicroPython (step 1a /
-  `firmware/FLASHING.md`) to reuse the board. This is the inverse of step 1a.
-- **`--uninstall-ha`** — remove the unit's HA presence: **clear the retained MQTT
-  discovery + state for the device** on the broker (a subscribe-and-clear over the
-  wizard's own socket MQTT, `_clear_device_retained` — empty retained payloads make HA
-  drop the device), then **rebuild** the shared `/oselia-hearth` dashboard without this
-  gateway's view (deleting it only if no gateways remain) and remove the blueprint
-  (`ha_setup.teardown`).
-  `--uninstall-ha-mqtt` also removes the HA MQTT integration. Device id / broker come
-  from `--device-id` / `--broker`, else the connected board's `site.json`; if the broker
-  isn't recorded there (e.g. an already-wiped board), it's **discovered on the network**
-  (same mDNS → port-scan → manual flow as step 2) rather than failing. The HA token
-  resolves/prompts as for `--ha-setup`.
-- **`--uninstall-all`** — full decommission: runs `--uninstall-ha` (forcing
-  `--uninstall-ha-mqtt`) **then** `--uninstall-firmware`, in that order — HA cleanup
-  must read the board's `site.json` *before* the wipe erases it.
+  BOOTSEL. Confirms first (irreversible; `--yes` skips the prompt); the UF2 comes from the
+  bundled `uf2/` (offline), else cache, else download; `--erase-uf2 PATH` overrides.
+  Re-flash MicroPython (`oselia flash`, step 1a / `firmware/FLASHING.md`) to reuse the board.
 
-### 6.3 Live log / diagnostics monitor (`--monitor`)
+Removing a unit from Home Assistant is an HA-side action (the OSELIA integration / its
+device page), not a provisioning step — the tool does not touch HA.
+
+### 6.2 Live log / diagnostics monitor (`oselia monitor`)
 
 A standalone mode (runs, then exits) that streams the board's firmware log + boot
 diagnostics over USB to the installer's terminal, for bring-up debugging and confirming a
 healthy boot. It **never flashes or provisions** — it only streams from a board that is
 already running MicroPython.
 
-**Why this can't be a naïve passive serial read.** This board has a dual-core USB-wedge
-quirk (see `firmware/BRINGUP.md` and the firmware boot-wedge investigation): on a **cold
-hard reset** core 1 (`net_task` — CH9120 bring-up + MQTT) starves core 0 (USB/TinyUSB)
-through the ~1–2 s enumeration window, so USB enumeration never completes and the board
-goes **invisible on USB**. So a board that just cold-booted may present no `…/cu.usbmodem*`
-to read; a board in BOOTSEL is USB *mass-storage* (`RPI-RP2` drive), not serial either —
-in both cases the monitor can only report this (it doesn't reflash; `provision.py` does
-that). Once enumeration *has* completed, USB survives core 1; the proven capture technique
-is therefore to **hold a `mpremote` session open** (already enumerated) and launch the
-firmware *from* it, so it is never cold-booted.
+**Why this can't be a naïve passive serial read.** A running unit has no interactive REPL to
+attach to — the app's `main()` never returns — and, once the network is up, the firmware
+**watchdog** (core 1) hard-resets the board during a *sustained* host raw-REPL session (it
+suspends core 1's WDT feed). So the capture technique is to **hold
+an `mpremote` session open** and launch the firmware *from* it. (A board in BOOTSEL is USB
+mass-storage `RPI-RP2`, not serial — the monitor reports that and does not reflash; `oselia
+flash` / `oselia provision` does.)
 
-- **`--monitor`** (default) — **relaunch the firmware over a held `mpremote exec` session**
-  and relay its stdout live (`_stream_subprocess`). The board is first quiesced to a bare,
-  watchdog-free REPL (`_disable_app` — a reset to a *bare* board, not a flash; no `net_task`,
-  so USB re-enumerates cleanly), its loader restored without resetting (`_restore_app`), then
-  run via `mpremote connect <port> exec <loader>`. The on-device launch runs the real
-  `/boot.py` loader (honouring OTA slot selection / boot-confirm), falling back to a
-  flat-layout `main` at root. USB stays enumerated through `net_task`'s boot, so the full
-  bring-up is visible. Ctrl-C stops and leaves the board at the REPL (`mpremote reset` /
-  power-cycle resumes autorun).
-- **`--monitor-passive`** — only **listen** to the board's current USB-CDC serial without
-  interrupting it (never enters the raw REPL), for an already-running unit you must not
-  restart. Prefers `pyserial`, falling back to a raw tty read on macOS/Linux (Windows
-  requires `pyserial`). Reconnecting: if the board reboots it re-detects the port and resumes.
+- **`oselia monitor`** (default) — **relaunch the firmware over a held `mpremote exec`
+  session** and relay its stdout live. The board is first quiesced to a bare, watchdog-free
+  REPL (a reset to a *bare* board, not a flash; no `net_task`, so USB re-enumerates cleanly),
+  its loader restored without resetting, then run via `mpremote connect <port> exec <loader>`.
+  The on-device launch runs the real `/main.py` loader (honouring OTA slot selection /
+  boot-confirm), or a legacy `/boot.py` if present. USB stays enumerated through
+  `net_task`'s boot, so the full bring-up is visible. Ctrl-C stops and leaves the board at the
+  REPL (`oselia board reset` / power-cycle resumes autorun).
+- **`oselia monitor --passive`** — only **listen** to the board's current USB-CDC serial
+  without interrupting it (never enters the raw REPL), for an already-running unit you must
+  not restart. Prefers `pyserial`, falling back to a raw tty read on macOS/Linux.
+  Reconnecting: if the board reboots it re-detects the port and resumes.
 
 If no board enumerates, the mode prints a **wedge-aware** message (BOOTSEL = mass-storage,
-re-flash with `provision.py`) rather than the generic "not plugged in". Lines are colourised
+re-flash with `oselia flash`) rather than the generic "not plugged in". Lines are colourised
 by the firmware's level prefix (`[E]`/`[W]`/`[D]` from `src/log.py`; INFO is left plain) on a
 colour-capable TTY (honours `NO_COLOR`). Note: diagnostics *telemetry* proper
 (`…/diag/state`) is an **MQTT** feed (§5.2 / `firmware/tools/watch.sh`); this mode surfaces
@@ -443,11 +365,11 @@ atomically (temp + rename on the board, or write-then-verify) so an aborted run
 doesn't brick provisioning.
 
 **Quiescing the firmware (up front).** On a *re-provision* the board is already running
-the firmware, whose **watchdog** (core 0) resets it mid-`raw-REPL` — this corrupts not
+the firmware, whose **watchdog** (core 1) resets it mid-`raw-REPL` — this corrupts not
 just `mpremote fs cp` (`could not enter raw repl`) but equally the **version check** and
 the **`site.json` read-back**, since all three break into the REPL. So the wizard quiesces
 **once, up front** — right after acquiring the board, *before* any read or write: it parks
-the auto-run entry (`/boot.py` on an OTA-layout board, else `/main.py`) and hard-resets in
+the auto-run entry (`/main.py`, or a legacy `/boot.py`) and hard-resets in
 one exec (`_disable_app`) so the board boots to a **bare REPL** — no firmware, no watchdog
 — for the whole run. This makes re-provisioning an already-running unit as robust as
 provisioning a bare board. It restores the entry after `copy_firmware` (`_restore_app`,
@@ -472,8 +394,8 @@ so this is effectively a no-op.)
   automatically (§3 step 1a). The physical flash is still a BOOTSEL/UF2 operation —
   the wizard just drives it — and is documented in `firmware/FLASHING.md`.
 - **No internet required.** Both UF2 images (the pinned MicroPython + `flash_nuke`)
-  ship in `provisioning/uf2/`, and the wizard prefers them over any download — so
-  step 1a and `--erase-flash` work fully offline (see `uf2/README.md`).
+  ship in `provisioning/uf2/`, and the tool prefers them over any download — so
+  step 1a and `oselia erase` work fully offline (see `uf2/README.md`).
 - mDNS works on the installer's LAN segment (same broadcast domain as the
   broker). If the laptop is on a different VLAN, mDNS may fail → manual entry
   path (§3 step 2) covers it.

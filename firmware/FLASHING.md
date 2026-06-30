@@ -4,12 +4,12 @@ The base interpreter is a one-time, physical (BOOTSEL) step — separate from de
 our app (`tools/deploy.sh` copies the `.py` files onto the already-flashed interpreter).
 Do this when you bring up a **new** RP2040-ETH board, or to update the interpreter.
 
-> 💡 **The installer wizard automates this.** `provisioning/provision.py` checks the
-> board's MicroPython version against the pinned build and, if it's missing or wrong,
-> offers to flash it for you (reboot to BOOTSEL → copy the UF2 → wait for reboot). It
-> downloads the pinned UF2, or use `--mpy-uf2 PATH` offline. This page is the manual
-> reference / what the wizard does under the hood — keep the version here in step with
-> `provision.py`'s `EXPECTED_MPY_VERSION` / `MPY_UF2_NAME`.
+> 💡 **The `oselia` tool automates this.** `oselia flash` (or `oselia provision`, which
+> checks the version first) reboots the board to BOOTSEL → copies the pinned UF2 → waits for
+> reboot, on a bare/BOOTSEL board or one already running MicroPython. The UF2 ships bundled
+> (offline), or use `--mpy-uf2 PATH`. This page is the manual reference / what the tool does
+> under the hood — keep the version here in step with `EXPECTED_MPY_VERSION` / `MPY_UF2_NAME`
+> in `provisioning/oselia_provision/constants.py`.
 
 > ⚠️ **Power:** on the `dib-monolith` board you must **never** have USB-C connected and
 > the **24 V supply on at the same time**. Switch the 24 V supply **OFF before** plugging
@@ -88,12 +88,12 @@ device name may change); the `tools/` scripts auto-detect it.
 ### Re-flashing a board that already has firmware (watchdog interplay)
 
 A UF2 flash **preserves the board's littlefs**, so re-flashing a previously provisioned
-unit keeps `/boot.py` + `/slots/a`: the board reboots **straight into the firmware**,
+unit keeps `/main.py` (the loader) + `/slots/a`: the board reboots **straight into the firmware**,
 which arms the hardware watchdog once the network is up. From then on, any `mpremote`
 break-in stops the watchdog feed and the board resets within ~8 s. The wizard handles
 this — after a re-flash it waits for the board to **re-enumerate on USB** (it no longer
 relies on a REPL exec that the watchdog would interrupt) and then quiesces the firmware
 to a bare REPL before writing files. If you ever flash by hand and see the port appear
 then vanish on a loop, that's the watchdog: park the app first
-(`mpremote exec "import os; os.rename('boot.py','boot.py.bak')"` then reset) or re-plug
+(`mpremote exec "import os; os.rename('main.py','main.py.bak')"` then reset) or re-plug
 to retry.

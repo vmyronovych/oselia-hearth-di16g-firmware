@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import status_led as s          # noqa: E402
 
-HEALTHY = {"boot": False, "ethernet": True, "mqtt": True, "mcp": True}
+HEALTHY = {"boot": False, "mqtt": True, "mcp": True}
 
 
 def _on_phase(period):
@@ -28,21 +28,16 @@ def test_boot_is_blue_solid():
     assert s.compute_color(st, 12345) == s.BLUE, "boot is solid"
 
 
-def test_ethernet_down_red_blink():
-    st = dict(HEALTHY, ethernet=False)
-    assert s.compute_color(st, _on_phase(1000)) == s.RED
-    assert s.compute_color(st, _off_phase(1000)) == s.BLACK, "blink off-phase"
-
-
-def test_priority_ethernet_over_mqtt():
-    # both down -> ethernet (root cause) wins
-    st = dict(HEALTHY, ethernet=False, mqtt=False)
-    assert s.compute_color(st, 0) == s.RED
-
-
-def test_mqtt_down_orange():
+def test_mqtt_down_orange_blink():
     st = dict(HEALTHY, mqtt=False)
     assert s.compute_color(st, _on_phase(600)) == s.ORANGE
+    assert s.compute_color(st, _off_phase(600)) == s.BLACK, "blink off-phase"
+
+
+def test_priority_mqtt_over_mcp():
+    # both down -> mqtt (root cause) wins
+    st = dict(HEALTHY, mqtt=False, mcp=False)
+    assert s.compute_color(st, 0) == s.ORANGE
 
 
 def test_mcp_down_yellow():
@@ -51,12 +46,12 @@ def test_mcp_down_yellow():
 
 
 def test_activity_flash_overrides_fault():
-    st = dict(HEALTHY, ethernet=False)
+    st = dict(HEALTHY, mqtt=False)
     # fault present, but within flash window -> white
     assert s.compute_color(st, 1000, last_activity_ms=1000) == s.WHITE
     # after flash window -> back to fault behaviour
     assert s.compute_color(st, 1000 + s.FLASH_MS + 1, last_activity_ms=1000) \
-        in (s.RED, s.BLACK)
+        in (s.ORANGE, s.BLACK)
 
 
 def test_scale():

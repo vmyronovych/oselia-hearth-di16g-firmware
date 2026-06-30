@@ -18,12 +18,13 @@ and log level). See `SPEC.md §5`.
 - `CLAUDE.md` — working agreement for implementing the firmware.
 - `config.example.py` — copy to `config.py` and edit pins / broker / timings / names.
 - `src/` — firmware modules (see `SPEC.md` §8).
-- `../provisioning/` — host-side installer wizard (USB) that configures a fresh
-  unit: `provision.py`, the installer guide `INSTALL.md`, and `PROVISIONING_SPEC.md`.
+- `../provisioning/` — the host-side **`oselia`** tool (USB): flashes MicroPython,
+  provisions a fresh unit, the board toolbox, and the dashboard YAML renderer. See its
+  `README.md` and `PROVISIONING_SPEC.md`.
 - `tests/` — host-runnable unit tests (CPython): detector, debounce, LED, queue,
   clock, MQTT packets/discovery, and diagnostics builders.
-- `../homeassistant/` — HA assets: the OSELIA integration + the `/oselia-hearth`
-  dashboard generator + the switch blueprint (set up by `provision.py --ha-setup`).
+- `../homeassistant/` — HA assets: the OSELIA integration design contract and the
+  `/oselia-hearth` dashboard example (render your own with `oselia dashboard render`).
 - `BRINGUP.md` — bench bring-up checklist (the physical/HA steps scripts can't do).
 - `FLASHING.md` — which MicroPython UF2 to flash on a new RP2040-ETH, and how.
 - `POC_NOTES.md` — POC-confirmed hardware facts + the manufactured-board pin/LED delta.
@@ -167,9 +168,8 @@ rate**, showing the single highest-priority issue (root-cause first):
 | LED | Pattern | Meaning | Priority |
 |---|---|---|---|
 | 🔵 Blue | solid | Booting / initialising | startup |
-| 🔴 Red | slow blink (~1 s) | CH9120 Ethernet / TCP link down | 1 (root cause) |
-| 🟠 Orange | medium blink (~0.6 s) | MQTT broker session down | 2 |
-| 🟡 Yellow | fast blink (~0.3 s) | An MCP23017 not responding | 3 |
+| 🟠 Orange | medium blink (~0.6 s) | MQTT broker / link down | 1 (root cause) |
+| 🟡 Yellow | fast blink (~0.3 s) | An MCP23017 not responding | 2 |
 | 🟢 Green | **solid** | All healthy | — |
 | ⚪ White | brief flash (~90 ms) | A gesture was just published (activity) | overrides |
 

@@ -30,7 +30,8 @@ def test_no_mpy_bundles_py():
     bundle, names = ota_build.build_bundle(SRC, use_mpy=False)
     assert names, "expected at least one bundled module"
     assert all(n.endswith(".py") for n in names), names
-    assert "boot.py" not in names                 # loader is never bundled
+    assert "main.py" not in names                 # main.py is the loader; never bundled
+    assert "app.py" in names                       # the app entry MUST be bundled
     files = ota.parse_bundle(bundle)              # verifies per-file sha + round-trip
     assert [n for n, _ in files] == names
 
@@ -43,7 +44,8 @@ def test_mpy_bundles_mpy():
     bundle, names = ota_build.build_bundle(SRC, use_mpy=True)
     assert names, "expected at least one bundled module"
     assert all(n.endswith(".mpy") for n in names), names
-    assert not any(n.startswith("boot") for n in names)
+    assert "main.mpy" not in names                 # main.py is the loader; never bundled
+    assert "app.mpy" in names                       # the app entry MUST be bundled
     files = ota.parse_bundle(bundle)              # verifies per-file sha + round-trip
     assert [n for n, _ in files] == names
     for n, content in files:

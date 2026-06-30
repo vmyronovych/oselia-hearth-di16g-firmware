@@ -24,7 +24,8 @@ mpremote connect /dev/ttyACM0 fs cp src/*.py :   # all modules to root
 > board — or add `sys.path` handling. Keep `config.py` at root.
 
 To auto-run on power-up, name the entry `main.py` at root (it already is) — MicroPython
-runs `boot.py` then `main.py` automatically.
+runs `boot.py` (if present) then `main.py` automatically. This firmware ships **no**
+`boot.py`; the root `main.py` is the OTA loader.
 
 ## 3. Watch logs
 

@@ -1,8 +1,8 @@
 """Host tests for the config.py site.json overlay (CPython, no board).
 
 Run:  python3 tests/test_config_overlay.py
-The firmware's src/config.py overlays a machine-owned site.json (written by
-provision.py) on top of its hardware defaults. These tests import config with a
+The firmware's src/config.py overlays a machine-owned site.json (written by the
+`oselia` provisioning tool) on top of its hardware defaults. These tests import config with a
 crafted site.json in the cwd and assert the overrides land in the right shapes
 (notably BROKER_IP as a 4-tuple, which main._validate_config still guards).
 """
@@ -67,15 +67,16 @@ def test_overlay_diag_disable():
     assert cfg.DIAG_ENABLE is False
 
 
-def test_overlay_ha_integration_defaults_mqtt():
-    # No "ha_integration" key -> firmware default ("mqtt": publish HA discovery).
+def test_overlay_ha_integration_defaults_oselia():
+    # No "ha_integration" key -> firmware default ("oselia": skip MQTT discovery).
     cfg = _load_config_with({"broker_ip": "10.0.0.1"})
-    assert cfg.HA_INTEGRATION == "mqtt", cfg.HA_INTEGRATION
+    assert cfg.HA_INTEGRATION == "oselia", cfg.HA_INTEGRATION
 
 
-def test_overlay_ha_integration_oselia():
-    cfg = _load_config_with({"broker_ip": "10.0.0.1", "ha_integration": "oselia"})
-    assert cfg.HA_INTEGRATION == "oselia"
+def test_overlay_ha_integration_mqtt_legacy():
+    # A hand-set legacy "mqtt" override still works (publish HA discovery).
+    cfg = _load_config_with({"broker_ip": "10.0.0.1", "ha_integration": "mqtt"})
+    assert cfg.HA_INTEGRATION == "mqtt"
 
 
 def test_overlay_persisted_tunables():

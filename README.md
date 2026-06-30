@@ -30,12 +30,12 @@ build, flash, provision, and update a unit.
 | Path | What's inside |
 |------|---------------|
 | [`firmware/`](firmware/) | MicroPython firmware (RP2040-ETH): inputs → press detection → MQTT, device diagnostics, two-way control, and OTA. See its [README](firmware/README.md) and [SPEC](firmware/SPEC.md). |
-| [`provisioning/`](provisioning/) | USB installer wizard that configures a fresh unit and wires up the HA side — see the [install guide](provisioning/INSTALL.md). |
+| [`provisioning/`](provisioning/) | The **`oselia`** host tool (Typer CLI): flash MicroPython, provision a unit onto the broker, a full board toolbox (use instead of raw `mpremote`), network discovery, and a Home Assistant dashboard YAML renderer — see its [README](provisioning/README.md). |
 | [`homeassistant/`](homeassistant/) | HA assets the installer pushes: the `/oselia-hearth` dashboard generator + the switch blueprint, plus the integration [design contract](homeassistant/INTEGRATION_SPEC.md). |
 
 ## Getting started
 
-- **Install a gateway** → [`provisioning/INSTALL.md`](provisioning/INSTALL.md)
+- **Install a gateway** → [`provisioning/README.md`](provisioning/README.md)
 - **Hack on the firmware** → [`firmware/README.md`](firmware/README.md)
 - **Understand the design** → [`firmware/SPEC.md`](firmware/SPEC.md)
 - **Cut a firmware release** → [`firmware/RELEASING.md`](firmware/RELEASING.md)

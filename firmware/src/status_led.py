@@ -15,15 +15,13 @@ lazily, so this module also imports cleanly under CPython.
 
 Subsystem keys + default priority (first = shown first when unhealthy):
     "boot"      -> initialising (solid blue)
-    "ethernet"  -> CH9120 TCP link down (red, slow blink)        [root cause]
-    "mqtt"      -> broker session down  (orange, medium blink)
+    "mqtt"      -> broker/link down (orange, medium blink)
     "mcp"       -> MCP23017 not responding (yellow, fast blink)
 All healthy -> solid green. Activity -> brief white flash (overrides).
 """
 
 # Base colours (full-scale 0..255; brightness is scaled at write time).
 BLACK = (0, 0, 0)
-RED = (255, 0, 0)
 ORANGE = (255, 70, 0)
 YELLOW = (255, 200, 0)
 GREEN = (0, 255, 0)
@@ -31,12 +29,11 @@ BLUE = (0, 0, 255)
 WHITE = (255, 255, 255)
 
 # Priority order: earlier entries win when several are unhealthy.
-PRIORITY = ("boot", "ethernet", "mqtt", "mcp")
+PRIORITY = ("boot", "mqtt", "mcp")
 
 # Per-subsystem fault colour + blink period (ms). duty = 0.5.
 _FAULT = {
     "boot": (BLUE, 0),         # period 0 => solid
-    "ethernet": (RED, 1000),
     "mqtt": (ORANGE, 600),
     "mcp": (YELLOW, 300),
 }

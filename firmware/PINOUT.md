@@ -33,7 +33,7 @@ POC_NOTES.md for the derivation.
 |------------|--------------|-----------|------|-------------|
 | **GP26**   | ADC0 / I²C1 SDA | `SDA`  | MCP23017 I²C data  | `PIN_I2C_SDA=26`, `I2C_ID=1` |
 | **GP27**   | ADC1 / I²C1 SCL | `SCK`  | MCP23017 I²C clock | `PIN_I2C_SCL=27`, `I2C_ID=1` |
-| **GP22**   | GP22 (GPIO/PIO) | `INTA` | MCP shared wired-OR INT (active-low, IRQ) | `PIN_MCP_INT=22` |
+| **GP22**   | GP22 (GPIO/PIO) | `INTA` | MCP shared wired-OR INT — **not used** (firmware polls) | — |
 | **GP9**    | SPI1 CSn / I²C0 SCL | `RESET` | MCP `/RESET` (active-low, MCU-driven) | `PIN_MCP_RESET=9` |
 | **VSYS**   | Vsys (power in) | `VCC_3V3` | Board 3V3 rail powers the module via VSYS | — |
 | **GND ×4** | G / AGND | `GND` | Ground (pads 3 & 8 of **both** header rows) | — |

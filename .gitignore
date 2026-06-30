@@ -9,3 +9,9 @@ __pycache__/
 # Installer-generated per-site config (carries broker password; never commit)
 site.json
 site.json.tmp
+
+# Local dev virtualenv + build artifacts for the provisioning tool
+.venv/
+*.egg-info/
+build/
+dist/

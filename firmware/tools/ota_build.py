@@ -81,7 +81,7 @@ def _compile_mpy(py_path, out_dir):
 
 def build_bundle(src, use_mpy=True):
     py_files = [p for p in sorted(glob.glob(os.path.join(src, "*.py")))
-                if os.path.basename(p) != "boot.py"]  # the loader is never bundled
+                if os.path.basename(p) != "main.py"]  # main.py is the loader; never bundled
     files = []
     if use_mpy:
         ok, ver = _check_mpy_cross()

@@ -253,7 +253,8 @@ parameters in the Home Assistant app with no extra service. Built in `diag.py`
 | `last` | sensor | last published gesture, e.g. `b1/in3 single` |
 
 **Structured root-cause observability (fw ≥ 0.7.0).** `diag/state` is extended with
-`hw`, `reset_cause` (`power_on`/`wdt`/`soft`/…), `health` (`ok`/`degraded`/`mcp_fault`/
+`hw`, `reset_cause` (rp2: `power_on`/`wdt`/`unknown`; `wdt` also covers any `machine.reset()`),
+`health` (`ok`/`degraded`/`mcp_fault`/
 `net_fault`), `boards_total`/`boards_ok`, a per-board `mcp[]` array (`{board,addr,ok,
 code,detail,fails,last_ok_s,recoveries}`), a `counters` block (`bus_recoveries`,
 `mcp_resets`, `reconnects`, `dropped`), and a `last_fault` + bounded
@@ -275,8 +276,8 @@ published once per connect, after the action discovery (the queue buffers presse
 through that one-time burst, as it already does for the `n_boards × 16 × 3` action
 configs).
 
-`DIAG_ENABLE` is a per-install toggle: the provisioning wizard writes `"diag":
-false` into `site.json` (`provision.py --no-diag`) and the config overlay turns the
+`DIAG_ENABLE` is a per-install toggle: the provisioning tool writes `"diag":
+false` into `site.json` (`oselia provision --no-diag`) and the config overlay turns the
 whole feature off — no `diag/state` publishes and no diagnostic entities.
 
 **Log mirror.** WARN/ERROR log lines are also surfaced in HA: `log.set_sink` stashes
@@ -300,13 +301,14 @@ re-subscribes every reconnect) and publishes HA **`button`** entities:
 |--------|---------------|--------|
 | Restart (`device_class: restart`) | `…/cmd/reboot` | `machine.reset()` (publishes `offline` first) |
 | Identify (`device_class: identify`) | `…/cmd/identify` | flash the status LED white ~3 s |
-| (maintenance — no HA entity) | `…/cmd/maintenance` | park the loader (`boot.py`→`boot.py.provbak`) + `machine.reset()` → boot **bare** (no `main`, no watchdog) |
+| (maintenance — no HA entity) | `…/cmd/maintenance` | park the loader (`main.py`→`main.py.provbak`) + `machine.reset()` → boot **bare** (no app, no watchdog) |
 
 The **maintenance** command is the cooperative provisioning quiesce (no HA button; sent by
-`provision.py` over the broker): it lets the host re-provision a **running** unit over USB
-without breaking into the watchdog-guarded REPL (which would hard-reset the board and can
-wedge USB). The firmware renames the loader and resets *itself*, so the board comes up bare
-(stable USB) for the host to rewrite; provisioning restores the loader after. See
+the `oselia` tool over the broker): it lets the host re-provision a **running** unit over USB
+without holding a host REPL session on the watchdog-guarded unit (which the WDT hard-resets
+once armed). The firmware renames the loader and resets *itself*, so the board comes up bare
+for the host to
+rewrite; provisioning restores the loader after. See
 `provisioning/PROVISIONING_SPEC.md` sec.3.1.
 
 Inbound PUBLISH is parsed in `mqtt_client.service()` and dispatched to a handler —
@@ -391,8 +393,7 @@ build-independent), with byte order set by `STATUS_LED_ORDER`.
 | Condition (priority order)      | Colour  | Pattern        |
 |---------------------------------|---------|----------------|
 | Booting / initialising          | Blue    | solid          |
-| Ethernet (CH9120 TCP) down      | Red     | slow blink (1 s)   |
-| MQTT broker session down        | Orange  | medium blink (0.6 s) |
+| MQTT broker / link down         | Orange  | medium blink (0.6 s) |
 | MCP23017 not responding         | Yellow  | fast blink (0.3 s)   |
 | All subsystems healthy          | Green   | solid          |
 | Gesture published (any input)   | White   | ~90 ms flash (overrides) |
@@ -435,11 +436,10 @@ dib-gateway-fw/
 
 The OSELIA custom integration lives in its own repo
 (**vmyronovych/oselia-hearth-di16g-ha**, HACS-installable; design contract in
-`homeassistant/INTEGRATION_SPEC.md`). The in-repo HA assets — `homeassistant/dashboards/`
-(`generate.py` + reference yaml) and `homeassistant/blueprints/…` — and the provisioning
-pusher (`provisioning/ha_setup.py`,
-`provision.py --ha-setup`) live outside `src/`. See `provisioning/PROVISIONING_SPEC.md
-§6.1`.
+`homeassistant/INTEGRATION_SPEC.md`). The in-repo HA assets — the dashboard example in
+`homeassistant/dashboards/` (render your own with `oselia dashboard render`) and
+`homeassistant/blueprints/…` — live outside `src/`. The host tool does not push HA assets;
+the integration is installed via HACS and the dashboard YAML is uploaded by hand.
 
 Pure modules (no `machine`/`network` imports): `press_detector`, `debounce`,
 `event_queue`, `clock`, `mqtt_packets`, `shared_state`, and the builders in
@@ -463,9 +463,9 @@ Pure modules (no `machine`/`network` imports): `press_detector`, `debounce`,
   its inputs (as `event` entities and/or automation triggers), the diagnostic
   entities, and the control entities (Restart/Identify buttons, timing `number`s, log
   `select`). Verify a control round-trip (e.g. *Restart* → offline→online; a `number`
-  change updates `…/cfg` and survives a reboot) and, with `--ha-setup`, that the OSELIA
-  integration + `/oselia-hearth` dashboard set up (or, with legacy `--mqtt`, the MQTT
-  integration + blueprint). (Done against a local HA 2025.11 this cycle.)
+  change updates `…/cfg` and survives a reboot), and that the OSELIA integration (installed
+  via HACS) shows the device + entities and the rendered `/oselia-hearth` dashboard works.
+  (Done against a local HA 2025.11 this cycle.)
 
 ---
 

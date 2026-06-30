@@ -5,10 +5,10 @@ Nothing else in the firmware should hard-code these values.
 
 Note: the per-install values (broker IP/port, MQTT credentials, DHCP, board
 count, optional name overrides) are normally NOT hand-edited. The host-side
-wizard (../provisioning/provision.py) writes them into a machine-owned
+`oselia` tool (../provisioning/) writes them into a machine-owned
 `site.json` on the board, which config.py overlays on top of these defaults at
 import (see the overlay block at the bottom of src/config.py). Treat the values
-here as hardware defaults; let the wizard own the site-specific kernel. See
+here as hardware defaults; let the tool own the site-specific kernel. See
 ../provisioning/PROVISIONING_SPEC.md.
 """
 
@@ -37,10 +37,9 @@ UART_CONFIG_BAUD = 9600        # CH9120 serial-config-mode baud (per POC)
 PIN_CH9120_UART_ID = 1
 PIN_CH9120_TX = 20             # MCU TX -> CH9120 RXD   (POC: tx=Pin(20))
 PIN_CH9120_RX = 21             # CH9120 TXD -> MCU RX   (POC: rx=Pin(21))
-# CH9120 TCP-status pin. DISABLED (None): never HW-validated (POC didn't use it), and
-# trusting it caused a false-"down" reconnect FLAP. Liveness comes from MQTT keepalive/
-# PINGRESP + CONNACK instead (HW-independent). Re-enable (17) only after verifying on HW.
-PIN_CH9120_TCPCS = None         # was 17 -- see note above (HW-VERIFY before re-enabling)
+# CH9120 TCP-status pin (GP17) -- DISABLED (None); it caused a reconnect flap. Liveness
+# comes from MQTT keepalive/PINGRESP instead (HW-independent).
+PIN_CH9120_TCPCS = None
 PIN_CH9120_CFG0 = 18           # LOW = config mode (POC: Pin(18))
 PIN_CH9120_RST = 19            # active LOW (POC: Pin(19))
 
@@ -57,8 +56,6 @@ I2C_FREQ = 400_000             # POC used 100_000; 400k is fine for a short bus
 MCP_AUTODISCOVER = True
 MCP_ADDRESSES = [0x20, 0x21, 0x22, 0x23,
                  0x24, 0x25, 0x26, 0x27]         # fallback / explicit (1..8 chips)
-PIN_MCP_INT = 22               # SHARED wired-OR INT line; board net INTA -> GP22
-                               # (POC used GP2; manufactured board routes it to GP22)
 PIN_MCP_RESET = 9              # board net RESET -> MCP /RESET (pin 18) on GP9.
                                # Driven HIGH (deasserted) at boot, pulsed LOW once to
                                # reset the chips. None = tied high in hardware (POC).
@@ -109,12 +106,12 @@ DISCOVERY_PREFIX = "homeassistant"     # HA default
 # triggers, the original), or "both". "both" doubles discovery traffic on connect.
 INPUT_DISCOVERY = "both"
 
-# Which HA integration consumes this device: "mqtt" (firmware publishes HA MQTT
-# discovery; device shows under the MQTT integration -- the default) or "oselia" (the
-# first-party OSELIA custom integration owns the entities; firmware skips publishing
-# discovery). Data/command topics are identical either way. Set via `provision.py
-# --oselia`. See homeassistant/INTEGRATION_SPEC.md.
-HA_INTEGRATION = "mqtt"
+# Which HA integration consumes this device: "oselia" (the first-party OSELIA custom
+# integration owns the entities; firmware skips publishing discovery -- the DEFAULT) or
+# "mqtt" (legacy: firmware publishes HA MQTT discovery; device shows under the MQTT
+# integration). Data/command topics are identical either way. The host tool always
+# provisions "oselia". See homeassistant/INTEGRATION_SPEC.md.
+HA_INTEGRATION = "oselia"
 
 # Friendly-name overrides keyed by (board, pin), both 1-based (pin 1..16).
 # Anything not listed defaults to "board<b>_input<p>". Example:
@@ -157,7 +154,7 @@ LOG_LEVEL = 2
 # counters, last input) so the customer sees basic parameters in the HA app.
 # Sending is gated in net_task so it NEVER delays a button publish (only sent when
 # the gesture queue is empty, at most every DIAG_INTERVAL_S). Turn OFF per install
-# via the wizard (`provision.py --no-diag` -> site.json "diag": false).
+# via the tool (`oselia provision --no-diag` -> site.json "diag": false).
 DIAG_ENABLE = True
 DIAG_INTERVAL_S = 10           # how often to refresh the diag/state snapshot
 # Two-way control: subscribe to <base>/<id>/cmd/# and expose HA `button` entities
@@ -170,10 +167,10 @@ CONTROL_ENABLE = True
 DHCP_LEASE_SETTLE_MS = 4000
 
 # OTA application updates over MQTT (A/B slots + boot-confirm/auto-revert). The
-# interpreter is not updated OTA; the loader (/boot.py) + /site.json are never bundled
+# interpreter is not updated OTA; the loader (/main.py) + /site.json are never bundled
 # so OTA can't brick the boot path. See OTA_SPEC.md.
 OTA_ENABLE = True
-OTA_MAX_BOOT_TRIES = 2          # boots to prove a new build (MUST match boot.py)
+OTA_MAX_BOOT_TRIES = 2          # boots to prove a new build (MUST match main.py loader)
 OTA_BOOT_CONFIRM_MS = 20000    # MQTT-online + healthy this long -> confirm the build
 OTA_CHUNK_SIZE = 1024          # bytes per ota/data chunk (must match the publisher)
 OTA_NAK_STALL_MS = 1500        # no chunk for this long -> NAK still-missing chunks

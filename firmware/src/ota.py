@@ -11,9 +11,9 @@ I/O uses only stdlib `os`/`json` so it is host-testable too. Only `reset()` touc
 `machine`, imported lazily.
 
 Layout (OTA_SPEC.md "On-device slot layout"):
-    /boot.py            loader (installed once; never in a bundle)
+    /main.py            loader (installed once; never in a bundle)
     /site.json          machine-owned; never touched by OTA
-    /slots/a , /slots/b one full copy of the app each
+    /slots/a , /slots/b one full copy of the app each (entry: app.py)
     /ota/active         text "a"|"b"  (kept inside /ota/state too)
     /ota/state          JSON: {active, previous, pending, tries}
 """

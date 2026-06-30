@@ -49,7 +49,6 @@ def _beat(shared, led, mono):
         if shared.ready:
             led.boot_done()
         h = shared.health()
-        led.set_state("ethernet", h["ethernet"])
         led.set_state("mqtt", h["mqtt"])
         led.set_state("mcp", h["mcp"])
         led.update(mono.ms())
@@ -198,13 +197,13 @@ def run(shared, queue, device_id):
                 machine.reset()
         elif name == "maintenance":
             # Provisioning quiesce (PROVISIONING_SPEC.md): park the auto-run loader and reset
-            # to a BARE REPL so the host can re-provision over USB WITHOUT breaking into a
-            # running REPL. Doing it host-side fights the hardware watchdog -- the WDT
-            # hard-resets the board mid-break-in and a cold boot can wedge USB. Here the
-            # FIRMWARE renames the loader + resets ITSELF (no host interrupt, no WDT race);
-            # the board boots bare (no main -> no WDT) with stable USB, and provisioning
-            # restores the loader afterwards. Uses the same `.provbak` suffix the host's
-            # _disable_app/_restore_app expect, so recovery is unchanged.
+            # to a BARE REPL so the host can re-provision over USB WITHOUT holding a raw-REPL
+            # session on the running unit. Once the network is up the WDT is armed, and a
+            # sustained host raw-REPL session (which suspends core1's WDT feed) gets hard-reset.
+            # Here the FIRMWARE renames the loader + resets ITSELF (no host session, no WDT
+            # race); the board boots bare (no app -> no WDT), and provisioning restores the
+            # loader afterwards. Uses the same `.provbak` suffix the host's
+            # _disable_app/_restore_app expect.
             log.warn("maintenance command -> parking loader + resetting to a bare REPL")
             try:
                 client.publish(avail_topic, "offline", retain=True)
@@ -390,7 +389,7 @@ def run(shared, queue, device_id):
 
     def _ota_confirm_if_healthy(now_ms):
         """Once the running build has been NETWORK-online for OTA_BOOT_CONFIRM_MS, clear
-        the boot-confirm pending flag so boot.py won't auto-revert it.
+        the boot-confirm pending flag so the main.py loader won't auto-revert it.
 
         Requires only mqtt+ethernet -- deliberately NOT mcp. As of 0.7.x a degraded MCP
         is a normal, reported, recoverable running state (the firmware is built to keep
@@ -474,7 +473,7 @@ def run(shared, queue, device_id):
                 shared.set_net(eth_ok=True, mqtt_ok=True)
                 client.publish(avail_topic, "online", retain=True)
                 if first_connect and cfg.OTA_ENABLE:
-                    # Reached the network -> this boot is good; clear boot.py's
+                    # Reached the network -> this boot is good; clear the main.py loader's
                     # consecutive-failure counter so its safe-mode gate resets.
                     try:
                         import ota as _ota
@@ -498,7 +497,7 @@ def run(shared, queue, device_id):
                     # homeassistant/.../config publishing is gated. The command
                     # subscribe and the cfg seed are NOT gated -- commands and the HA
                     # number/select state work in both modes. See INTEGRATION_SPEC.md.
-                    publish_disc = getattr(cfg, "HA_INTEGRATION", "mqtt") == "mqtt"
+                    publish_disc = getattr(cfg, "HA_INTEGRATION", "oselia") == "mqtt"
                     if publish_disc:
                         mode = getattr(cfg, "INPUT_DISCOVERY", "both")
                         if mode in ("trigger", "both"):

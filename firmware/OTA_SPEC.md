@@ -9,9 +9,9 @@ alongside `SPEC.md` (firmware behaviour) and `../provisioning/PROVISIONING_SPEC.
 **Implementation status (2026-06-25): WORKING + HW-VERIFIED end to end.**
 - `src/ota.py` core (boot-confirm/auto-revert state machine, bundle build/parse/verify,
   loss-tolerant `OtaReceiver`, streaming `apply_bundle_file`); `tests/test_ota.py` (19).
-- `src/boot.py` loader: boot-confirm gate + **safe-mode** (drops to REPL after
+- `src/main.py` loader: boot-confirm gate + **safe-mode** (drops to REPL after
   `_MAX_CRASHES` failed boots so a bad slot can't reset-loop forever); installed at root,
-  never bundled.
+  never bundled. It is `main.py` (not `boot.py`) by design.
 - `src/net_task.py` receiver: `ota/cmd` (version-guarded), `ota/data` chunks, NAK
   re-request of dropped chunks (`ota/nak`), staged-slot apply + reset, and `confirm()`
   once online+healthy for `OTA_BOOT_CONFIRM_MS`.
@@ -26,12 +26,10 @@ alongside `SPEC.md` (firmware behaviour) and `../provisioning/PROVISIONING_SPEC.
 - **Key HW learnings:** board subscribes `ota/data`/`ota/cmd` at **QoS0** → individual
   chunks AND the command can drop → publisher resends `cmd` till acked + the board NAKs
   missing chunks. Stream must be **paced to ~the 115200-baud UART rate** (~100-200ms per
-  1KB chunk) or the CH9120 RX buffer overflows. `machine.reset()` on this board can drop
-  USB-CDC until a cold BOOTSEL reflash — irrelevant to OTA (network), but it's why USB
-  deploys are flaky; recover via flash_nuke + reflash + the resumable slot deploy.
+  1KB chunk) or the CH9120 RX buffer overflows.
 - **Remaining:** wire the integration `UpdateEntity` to drive OTA from the HA UI
   (download bundle from a release feed + publish via the `ota_publish` logic);
-  provisioning to lay down the slot layout (`boot.py` + `/slots/a`) at install time.
+  provisioning to lay down the slot layout (`main.py` loader + `/slots/a`) at install time.
   See `homeassistant/INTEGRATION_SPEC.md`.
 
 ## Context
@@ -76,19 +74,19 @@ For atomic A/B activation we move the **app** into versioned slot dirs and keep 
 tiny, OTA-immutable loader at root:
 
 ```
-/boot.py              # loader (installed once via USB; NEVER in an OTA bundle)
+/main.py              # loader (installed once via USB; NEVER in an OTA bundle)
 /site.json            # machine-owned; never touched by OTA
-/slots/a/  <app .py>  # one full copy of src/*.py + config.py
+/slots/a/  <app .py>  # one full copy of src/*.py + config.py (entry: app.py)
 /slots/b/  <app .py>  # the other copy
 /ota/active           # text: "a" or "b"  (atomic pointer)
 /ota/state            # text: boot-confirm state machine fields (see below)
 ```
 
-`boot.py` (runs at reset): read `/ota/active`, run the **boot-confirm gate** (below),
-`sys.path.insert(0, "/slots/<active>")`, then `import main; main.main()`. The loader
-is deliberately ~50 lines and never updated remotely, so no OTA can brick the boot
-path. `config.py`'s `open("site.json")` stays relative to cwd (`/`) → works from any
-slot, unchanged.
+`main.py` (runs at reset): read `/ota/active`,
+run the **boot-confirm gate** (below), `sys.path.insert(0, "/slots/<active>")`, then
+`import app; app.main()`. The loader is deliberately ~50 lines and never updated
+remotely, so no OTA can brick the boot path. `config.py`'s `open("site.json")` stays
+relative to cwd (`/`) → works from any slot, unchanged.
 
 ### Boot-confirm / auto-revert state machine (the safety core)
 
@@ -97,7 +95,7 @@ slot, unchanged.
 - After a successful download+verify, OTA writes the new app into the **inactive**
   slot, sets `previous=<old active>`, `active=<new>`, `pending=true`, `tries=0`,
   then **soft-resets**.
-- On every boot, `boot.py`: if `pending` → `tries += 1`; if `tries > OTA_MAX_BOOT_TRIES`
+- On every boot, the `main.py` loader: if `pending` → `tries += 1`; if `tries > OTA_MAX_BOOT_TRIES`
   (e.g. 2) → **revert**: `active=previous`, clear `pending`, boot the old slot.
   Otherwise boot the (new) active slot.
 - The running app, once it reaches **network-online** (mqtt + ethernet) continuously
@@ -119,11 +117,11 @@ already tell `net_task` exactly when "online + healthy" holds.
    **Modules are compiled to MicroPython bytecode (`.mpy`)** before packaging
    (`tools/ota_build.py`, default; `--no-mpy` for raw `.py`): the bundle is ~70% smaller
    → fewer chunks → less loss exposure, and the device imports `.mpy` transparently
-   (`boot.py` `import main`). The bundle format and on-device contract (manifest
+   (the loader's `import app`). The bundle format and on-device contract (manifest
    `[[name,size,sha256],…]` + per-file/whole sha) are **unchanged** — only the file
    `name`s carry a `.mpy` extension. The cross-compiler must emit a `.mpy` version the
    interpreter accepts (v6.3 for MicroPython 1.23+, which the board's 1.28.0 uses);
-   `boot.py` (the root loader) is never bundled and stays `.py`.
+   `main.py` (the root loader) is never bundled and stays `.py`.
 2. Device (`net_task`, subscribed to `…/ota/cmd`) receives the command, guards on
    version (no-op if already running target), publishes `…/ota/state` =
    `downloading` (**retained**, so observers see it's intentional not a crash).
@@ -153,13 +151,13 @@ already tell `net_task` exactly when "online + healthy" holds.
   `net_task.py:94`). Set `client.on_message = ota.on_command`.
 
 ### 2. Slot layout + loader + auto-revert
-- New `src/boot.py` loader (root-installed). Tiny, dependency-free, robust.
+- New `src/main.py` loader (root-installed). Tiny, dependency-free, robust.
 - New `src/ota.py`: owns `/ota/state` read/write, `confirm()`, slot helpers, the
   command handler, the CH9120-reconfig + HTTP-GET + stream-to-flash + verify +
   swap. The HTTP client is a minimal `GET`/HTTP-1.0 reader over `UartStream`
   (reuse `net_stream.UartStream`, add a `read(n)`-driven body reader); parses
   status line + `Content-Length`.
-- `tools/deploy.sh` + `provisioning/provision.py`: install the loader at root and
+- `tools/deploy.sh` + `oselia provision`: install the loader at root and
   the app into `/slots/a/`, write `/ota/active=a`. (One-time layout change; this is
   the only place that changes how files land on the board.)
 
@@ -211,7 +209,7 @@ already tell `net_task` exactly when "online + healthy" holds.
   untouched → next boot runs the current version normally.
 - Power loss after swap but before confirm → `pending` + `tries` gate auto-reverts
   if the new build can't prove itself.
-- Loader (`boot.py`) and `site.json` are never in a bundle → unbrickable boot path
+- Loader (`main.py`) and `site.json` are never in a bundle → unbrickable boot path
   and preserved identity/credentials.
 
 ## Out of scope (deferred)
