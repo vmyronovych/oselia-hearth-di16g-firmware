@@ -304,9 +304,9 @@ re-subscribes every reconnect) and publishes HA **`button`** entities:
 
 The **maintenance** command is the cooperative provisioning quiesce (no HA button; sent by
 the `oselia` tool over the broker): it lets the host re-provision a **running** unit over USB
-without breaking into the watchdog-guarded REPL (which would hard-reset the board and can
-wedge USB). The firmware renames the loader and resets *itself*, so the board comes up bare
-(stable USB) for the host to rewrite; provisioning restores the loader after. See
+without breaking into the watchdog-guarded REPL (which would hard-reset the board). The
+firmware renames the loader and resets *itself*, so the board comes up bare for the host to
+rewrite; provisioning restores the loader after. See
 `provisioning/PROVISIONING_SPEC.md` sec.3.1.
 
 Inbound PUBLISH is parsed in `mqtt_client.service()` and dispatched to a handler —
