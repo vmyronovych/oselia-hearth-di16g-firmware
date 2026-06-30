@@ -320,8 +320,9 @@ healthy boot. It **never flashes or provisions** — it only streams from a boar
 already running MicroPython.
 
 **Why this can't be a naïve passive serial read.** A running unit has no interactive REPL to
-attach to — the app's `main()` never returns — and the firmware **watchdog** (core 1)
-hard-resets the board if the tool breaks into the REPL. So the capture technique is to **hold
+attach to — the app's `main()` never returns — and, once the network is up, the firmware
+**watchdog** (core 1) hard-resets the board during a *sustained* host raw-REPL session (it
+suspends core 1's WDT feed). So the capture technique is to **hold
 an `mpremote` session open** and launch the firmware *from* it. (A board in BOOTSEL is USB
 mass-storage `RPI-RP2`, not serial — the monitor reports that and does not reflash; `oselia
 flash` / `oselia provision` does.)
@@ -364,7 +365,7 @@ atomically (temp + rename on the board, or write-then-verify) so an aborted run
 doesn't brick provisioning.
 
 **Quiescing the firmware (up front).** On a *re-provision* the board is already running
-the firmware, whose **watchdog** (core 0) resets it mid-`raw-REPL` — this corrupts not
+the firmware, whose **watchdog** (core 1) resets it mid-`raw-REPL` — this corrupts not
 just `mpremote fs cp` (`could not enter raw repl`) but equally the **version check** and
 the **`site.json` read-back**, since all three break into the REPL. So the wizard quiesces
 **once, up front** — right after acquiring the board, *before* any read or write: it parks

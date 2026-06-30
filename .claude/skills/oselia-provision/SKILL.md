@@ -106,9 +106,11 @@ All accept `--port` to target a specific board; otherwise the first MicroPython 
   intentionally NOT done by this tool — render YAML and upload it manually.
 
 ## Hardware quirks the tool already handles (don't re-implement by hand)
-- **Pause a running unit before USB work.** A plain reset leaves no interactive REPL (the
-  app's `main()` never returns) and the watchdog (core-1) resets the board on an mpremote
-  break-in — so flows quiesce to a bare REPL or use a held session, never a bare cold reset.
+- **Pause a running unit before USB work.** `main()` never returns, so a plain reset gives no
+  interactive REPL; and once the network is up the core-1 watchdog is armed (the RP2040 WDT
+  can't be disarmed) — mpremote's raw-REPL ops (exec/fs) suspend the app's WDT feed, so a
+  *sustained* op is hard-reset at the ~8 s timeout. (A bare Ctrl-C just drops to the REPL and
+  survives — core-1 keeps feeding.) Flows quiesce to a bare REPL or use a held session.
 - **Cooperative quiesce**: a running unit is asked over MQTT (`…/cmd/maintenance`) to park
   its loader and reset itself — no host REPL break-in. USB fallback otherwise.
 - **Wiped vs non-wiped flash**: bare/BOOTSEL boards are wiped (flash_nuke) before the UF2;

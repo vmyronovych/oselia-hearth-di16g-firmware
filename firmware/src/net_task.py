@@ -198,12 +198,13 @@ def run(shared, queue, device_id):
                 machine.reset()
         elif name == "maintenance":
             # Provisioning quiesce (PROVISIONING_SPEC.md): park the auto-run loader and reset
-            # to a BARE REPL so the host can re-provision over USB WITHOUT breaking into a
-            # running REPL. Doing it host-side fights the hardware watchdog -- the WDT
-            # hard-resets the board mid-break-in. Here the FIRMWARE renames the loader +
-            # resets ITSELF (no host interrupt, no WDT race); the board boots bare (no app
-            # -> no WDT), and provisioning restores the loader afterwards. Uses the same
-            # `.provbak` suffix the host's _disable_app/_restore_app expect.
+            # to a BARE REPL so the host can re-provision over USB WITHOUT holding a raw-REPL
+            # session on the running unit. Once the network is up the WDT is armed, and a
+            # sustained host raw-REPL session (which suspends core1's WDT feed) gets hard-reset.
+            # Here the FIRMWARE renames the loader + resets ITSELF (no host session, no WDT
+            # race); the board boots bare (no app -> no WDT), and provisioning restores the
+            # loader afterwards. Uses the same `.provbak` suffix the host's
+            # _disable_app/_restore_app expect.
             log.warn("maintenance command -> parking loader + resetting to a bare REPL")
             try:
                 client.publish(avail_topic, "offline", retain=True)

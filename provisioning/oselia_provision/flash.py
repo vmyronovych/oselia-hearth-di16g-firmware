@@ -3,7 +3,8 @@ version check + whole-flash erase.
 
 The wipe-vs-no-wipe split, the BOOTSEL mount-race retries, and the "never reflash a board that
 merely failed a version read" rule defend against the firmware watchdog hard-resetting the
-board on a REPL break-in (a version read can fail on a perfectly good interpreter).
+board during a sustained host raw-REPL session (a version read can fail on a perfectly good
+interpreter).
 """
 import glob
 import os
@@ -170,8 +171,8 @@ def ensure_micropython(mpy_uf2, port):
         return port
     console.die(
         "The board dropped off USB while pausing its firmware. On this hardware the firmware's"
-        " watchdog can hard-reset the board when the tool breaks in -- so a RUNNING unit\n"
-        "  can't always be re-provisioned in place.\n"
+        " watchdog can hard-reset the board during a sustained host REPL session -- so a\n"
+        "  RUNNING unit can't always be re-provisioned in place.\n"
         "  Recover it for a CLEAN re-provision: hold the BOOT button while plugging in USB (it\n"
         "  mounts as RPI-RP2), then re-run `oselia provision` -- it does a wiped flash and\n"
         "  provisions. See firmware/FLASHING.md.")
