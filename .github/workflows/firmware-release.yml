@@ -54,6 +54,7 @@ jobs:
         working-directory: firmware
         run: |
           for t in tests/test_*.py; do echo "== $t =="; python "$t"; done
+          pip install -e ../provisioning   # pulls PyYAML/typer so the host tests import
           cd ../provisioning && for t in tests/test_*.py; do echo "== $t =="; python "$t"; done
 
       - name: Build bundle + manifest
