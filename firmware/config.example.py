@@ -37,10 +37,9 @@ UART_CONFIG_BAUD = 9600        # CH9120 serial-config-mode baud (per POC)
 PIN_CH9120_UART_ID = 1
 PIN_CH9120_TX = 20             # MCU TX -> CH9120 RXD   (POC: tx=Pin(20))
 PIN_CH9120_RX = 21             # CH9120 TXD -> MCU RX   (POC: rx=Pin(21))
-# CH9120 TCP-status pin. DISABLED (None): never HW-validated (POC didn't use it), and
-# trusting it caused a false-"down" reconnect FLAP. Liveness comes from MQTT keepalive/
-# PINGRESP + CONNACK instead (HW-independent). Re-enable (17) only after verifying on HW.
-PIN_CH9120_TCPCS = None         # was 17 -- see note above (HW-VERIFY before re-enabling)
+# CH9120 TCP-status pin (GP17) -- DISABLED (None); it caused a reconnect flap. Liveness
+# comes from MQTT keepalive/PINGRESP instead (HW-independent).
+PIN_CH9120_TCPCS = None
 PIN_CH9120_CFG0 = 18           # LOW = config mode (POC: Pin(18))
 PIN_CH9120_RST = 19            # active LOW (POC: Pin(19))
 
@@ -57,8 +56,6 @@ I2C_FREQ = 400_000             # POC used 100_000; 400k is fine for a short bus
 MCP_AUTODISCOVER = True
 MCP_ADDRESSES = [0x20, 0x21, 0x22, 0x23,
                  0x24, 0x25, 0x26, 0x27]         # fallback / explicit (1..8 chips)
-PIN_MCP_INT = 22               # SHARED wired-OR INT line; board net INTA -> GP22
-                               # (POC used GP2; manufactured board routes it to GP22)
 PIN_MCP_RESET = 9              # board net RESET -> MCP /RESET (pin 18) on GP9.
                                # Driven HIGH (deasserted) at boot, pulsed LOW once to
                                # reset the chips. None = tied high in hardware (POC).

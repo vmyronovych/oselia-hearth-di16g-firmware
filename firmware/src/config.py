@@ -29,12 +29,9 @@ UART_CONFIG_BAUD = 9600        # CH9120 serial-config-mode baud (per POC)
 PIN_CH9120_UART_ID = 1
 PIN_CH9120_TX = 20             # MCU TX -> CH9120 RXD   (POC: tx=Pin(20))
 PIN_CH9120_RX = 21             # CH9120 TXD -> MCU RX   (POC: rx=Pin(21))
-# CH9120 TCP-status pin. DISABLED (None): it was never HW-validated (the POC didn't use
-# it), and trusting it caused a false-"down" reconnect FLAP (connect -> publish -> forced
-# reconnect, repeatedly, which churned the broker status online/offline). Liveness now comes
-# from MQTT keepalive/PINGRESP + CONNACK (net_task / mqtt_client), which is HW-independent.
-# Set back to 17 only after verifying TCPCS polarity/timing on hardware.
-PIN_CH9120_TCPCS = None         # was 17 -- see note above (HW-VERIFY before re-enabling)
+# CH9120 TCP-status pin (GP17) -- DISABLED (None); it caused a reconnect flap. Liveness
+# comes from MQTT keepalive/PINGRESP instead (HW-independent).
+PIN_CH9120_TCPCS = None
 PIN_CH9120_CFG0 = 18           # LOW = config mode (POC: Pin(18))
 PIN_CH9120_RST = 19            # active LOW (POC: Pin(19))
 
@@ -58,11 +55,6 @@ I2C_FREQ = 50_000              # 50 kHz: generous rise-time margin for the long 
 # (`oselia provision --boards` / site.json board_count does this) to pin an exact list.
 MCP_AUTODISCOVER = True
 MCP_ADDRESSES = [0x20]         # fallback / explicit list (board1 = 0x20)
-# INT is NOT used: the firmware reads inputs by POLLING (MCP_POLL_MS). The shared
-# wired-OR INT line caused the original freeze + dropped-press faults, so it's
-# deliberately ignored -- GP22 and these settings are legacy/unused (no board change
-# needed; the physical line just goes unconnected in firmware).
-PIN_MCP_INT = None             # legacy: shared INT net (GP22). Unused under polling.
 PIN_MCP_RESET = 9              # board net RESET -> MCP /RESET (pin 18) on GP9.
                                # Driven HIGH (deasserted) at boot, pulsed LOW to reset
                                # the chips (boot + L2 recovery). None = tied high (POC).
