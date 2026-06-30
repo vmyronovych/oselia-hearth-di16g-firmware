@@ -6,11 +6,7 @@ Layout written:
     /ota/state          fresh boot-confirm state {active:a, pending:false, ...}
     /slots/a/  <app>    all firmware src/*.py except main.py (incl. the app entry app.py)
 
-The loader is main.py (not boot.py) on purpose: the rp2 port only initialises USB-CDC
-between boot.py and main.py, and the loader runs the app forever without returning -- so
-in boot.py USB-CDC would never come up. As main.py, the port brings USB-CDC up natively.
-
-Ported from the original wizard's copy_firmware().
+The loader is main.py (not boot.py) by design.
 """
 import os
 

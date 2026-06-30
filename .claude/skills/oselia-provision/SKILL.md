@@ -97,21 +97,24 @@ All accept `--port` to target a specific board; otherwise the first MicroPython 
   `provisioning/uf2/` (offline).
 - **Erase** the whole flash → bare-metal RP2040: `oselia -y erase`. Filesystem only
   (keep interpreter): `oselia wipe-fs`.
-- **Stream the firmware log**: `oselia monitor` (relaunches over a held USB session so a
-  cold boot can't wedge USB) or `oselia monitor --passive` (listen only, don't restart).
+- **Stream the firmware log**: `oselia monitor` (relaunches over a held USB session — the
+  app's `main()` never returns, so a plain reset leaves no interactive REPL to stream from)
+  or `oselia monitor --passive` (listen only, don't restart).
 - **Render the HA dashboard** as YAML to paste into Home Assistant (no live HA):
   `oselia dashboard render --id <6hex> --boards N > oselia-hearth.yaml`
   (or omit `--id` to read it from the connected board). HA integration/dashboard PUSH is
   intentionally NOT done by this tool — render YAML and upload it manually.
 
 ## Hardware quirks the tool already handles (don't re-implement by hand)
-- **Cold-boot USB wedge** (core-1 net_task starves core-0 USB enumeration): flows never
-  cold-reset a running unit; they quiesce to a bare REPL or run over a held session.
+- **Pause a running unit before USB work.** A plain reset leaves no interactive REPL (the
+  app's `main()` never returns) and the watchdog (core-1) resets the board on an mpremote
+  break-in — so flows quiesce to a bare REPL or use a held session, never a bare cold reset.
 - **Cooperative quiesce**: a running unit is asked over MQTT (`…/cmd/maintenance`) to park
   its loader and reset itself — no host REPL break-in. USB fallback otherwise.
 - **Wiped vs non-wiped flash**: bare/BOOTSEL boards are wiped (flash_nuke) before the UF2;
   in-place reflash keeps littlefs (site.json survives). A board that merely failed a
-  version read is NEVER reflashed (that would wedge USB).
+  version read is NEVER reflashed (the read fails because the running firmware's watchdog
+  keeps resetting the REPL, not because MicroPython is wrong).
 - **Atomic site.json** (temp + rename on the board) and the **OTA A/B slot layout**
   (`/slots/a` + `/main.py` loader installed last + fresh `/ota/state`).
 - **Serial-contention guard** (`board.lock_serial` + `board.check_port_free`): every

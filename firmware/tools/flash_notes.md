@@ -25,8 +25,7 @@ mpremote connect /dev/ttyACM0 fs cp src/*.py :   # all modules to root
 
 To auto-run on power-up, name the entry `main.py` at root (it already is) — MicroPython
 runs `boot.py` (if present) then `main.py` automatically. This firmware ships **no**
-`boot.py`: the root `main.py` is the OTA loader, so the rp2 port initialises USB-CDC
-natively before it runs (USB-CDC is inited only between `boot.py` and `main.py`).
+`boot.py`; the root `main.py` is the OTA loader.
 
 ## 3. Watch logs
 

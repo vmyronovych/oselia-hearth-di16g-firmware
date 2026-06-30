@@ -4,7 +4,7 @@ Two paths, ported verbatim from the original single-file wizard (HW-confirmed be
 
   * cooperative_quiesce()  -- the SAFE way: find the unit on the network and ask it over
     MQTT (<base>/<id>/cmd/maintenance) to park its loader and reset ITSELF. No host
-    REPL break-in, so no hardware-watchdog race and no USB wedge. Only acts when exactly
+    REPL break-in, so no hardware-watchdog race. Only acts when exactly
     ONE unit is online on a no-auth broker (we have no creds pre-quiesce).
 
   * disable_app() / restore_app()  -- the USB fallback: break into the REPL, rename the
@@ -25,10 +25,10 @@ def disable_app(port):
     """Park the auto-run entry and hard-reset to a bare, watchdog-free REPL. Returns True
     if something was parked (restore_app then has work to do), False on a bare board.
 
-    On a freshly flashed bare board (no boot.py/main.py) this returns immediately WITHOUT
-    resetting: a needless machine.reset() drops USB-CDC and the retry loop's rapid resets
-    can wedge USB enumeration entirely. Self-verifying: it reads the FS back after each
-    attempt; on a bare REPL no auto-run entry remains."""
+    On a freshly flashed bare board (no main.py) this returns immediately WITHOUT resetting:
+    a needless machine.reset() just churns USB-CDC (drop + ~1 s re-enumerate) for no reason.
+    Self-verifying: it reads the FS back after each attempt; on a bare REPL no auto-run entry
+    remains."""
     probe = board.exec_(port, "import os; _l = os.listdir(); "
                                "print('boot.py' in _l or 'main.py' in _l)")
     pout = (probe.stdout or "").strip().splitlines()
@@ -124,7 +124,7 @@ def cooperative_quiesce(port):
             continue
         newport = wait_for_bare_repl(port, timeout=30)
         if newport:
-            console.ok("  unit parked itself -> bare REPL on %s (clean; no USB wedge)."
+            console.ok("  unit parked itself -> bare REPL on %s (clean; no watchdog fight)."
                        % newport)
             return newport
     return None

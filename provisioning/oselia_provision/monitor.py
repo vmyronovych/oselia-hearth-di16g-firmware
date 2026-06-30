@@ -1,12 +1,12 @@
 """Stream the board's firmware log over USB + classify bring-up from the serial.
 
-Two capture techniques (this board has a dual-core cold-boot USB-wedge quirk -- see
-firmware/BRINGUP.md):
+Two capture techniques (the firmware's main() never returns, so a plain reset leaves no
+interactive REPL to attach to, and the watchdog resets the board on a REPL break-in):
 
   * stream_held()  -- relaunch the firmware over a HELD `mpremote ... resume exec` session
-    and relay its stdout. USB is already enumerated by that session, so it survives
-    net_task's boot; a cold reset would wedge it. Used by `monitor` (default) and the
-    best-effort bring-up stream during provisioning.
+    and relay its stdout. We enter the raw REPL on the idle board and run the loader
+    ourselves, capturing the boot output the autorun would otherwise own. Used by `monitor`
+    (default) and the best-effort bring-up stream during provisioning.
   * stream_passive() -- only LISTEN to the current USB-CDC serial without interrupting the
     running firmware (pyserial preferred, raw-tty fallback). Used by `monitor --passive`.
 

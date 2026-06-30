@@ -1,10 +1,9 @@
 """Flash the MicroPython interpreter onto the board over BOOTSEL/UF2, and the related
 version check + whole-flash erase.
 
-Ported verbatim from the original single-file wizard -- the wipe-vs-no-wipe split, the BOOTSEL mount-race
-retries, and the "never reflash a board that merely failed a version read" rule are all
-HW-confirmed defences against this board's cold-boot USB wedge. Do not simplify them
-without re-confirming on hardware.
+The wipe-vs-no-wipe split, the BOOTSEL mount-race retries, and the "never reflash a board that
+merely failed a version read" rule defend against the firmware watchdog hard-resetting the
+board on a REPL break-in (a version read can fail on a perfectly good interpreter).
 """
 import glob
 import os
@@ -83,8 +82,9 @@ def flash_micropython(mpy_uf2, port, erase_uf2=None, wipe=False):
 
     wipe=True first erases the WHOLE flash (flash_nuke) so the board boots to a clean bare
     REPL -- use it on the BOOTSEL/acquire path (no REPL to park a prior OTA app; a preserved
-    old firmware can wedge USB on boot). On the upgrade path the caller already quiesced
-    the /main.py loader, so pass wipe=False and littlefs (site.json) is preserved."""
+    old firmware auto-runs and its watchdog fights the tool's break-ins). On the upgrade path
+    the caller already quiesced the /main.py loader, so pass wipe=False and littlefs
+    (site.json) is preserved."""
     image = uf2.resolve_mpy(mpy_uf2)
     if not image:
         console.die("No MicroPython UF2 available to flash.")
@@ -137,9 +137,10 @@ def ensure_micropython(mpy_uf2, port):
     mismatch. Returns the port to keep using.
 
     CRITICAL (HW rule): a board that ENUMERATES as MicroPython is never flashed just because
-    its version didn't read -- a needless non-wipe reflash preserves the auto-running firmware
-    and wedges USB on the cold boot. A None read on a confirmed-MicroPython board => skip the
-    flash and continue. A board that dropped off USB entirely => die with BOOTSEL guidance."""
+    its version didn't read -- the read fails because the running firmware's watchdog keeps
+    resetting the REPL, NOT because MicroPython is wrong, so a reflash would needlessly disrupt
+    a healthy interpreter. A None read on a confirmed-MicroPython board => skip the flash and
+    continue. A board that dropped off USB entirely => die with BOOTSEL guidance."""
     ver = board.read_mpy_version(port)
     if ver is None and board.port_is_micropython(port, wait_s=10):
         for _ in range(2):
@@ -162,14 +163,15 @@ def ensure_micropython(mpy_uf2, port):
     if board.port_is_micropython(port, wait_s=10):
         console.warn("MicroPython is present but its version couldn't be read -- the running "
                      "firmware keeps resetting the REPL.")
-        console.info("  Skipping the interpreter flash to avoid a needless reflash that can "
-                     "wedge USB. Continuing. If the interpreter is genuinely wrong, run "
+        console.info("  Skipping the interpreter flash -- the version read fails because the "
+                     "running firmware keeps resetting the REPL, not because MicroPython is "
+                     "wrong. Continuing. If the interpreter is genuinely wrong, run "
                      "`oselia erase` then re-provision for a clean start.")
         return port
     console.die(
         "The board dropped off USB while pausing its firmware. On this hardware the firmware's"
-        " watchdog can hard-reset the board when the tool breaks in, and a cold boot can\n"
-        "  wedge USB enumeration -- so a RUNNING unit can't always be re-provisioned in place.\n"
+        " watchdog can hard-reset the board when the tool breaks in -- so a RUNNING unit\n"
+        "  can't always be re-provisioned in place.\n"
         "  Recover it for a CLEAN re-provision: hold the BOOT button while plugging in USB (it\n"
         "  mounts as RPI-RP2), then re-run `oselia provision` -- it does a wiped flash and\n"
         "  provisions. See firmware/FLASHING.md.")

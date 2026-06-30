@@ -152,8 +152,8 @@ Step by step:
    end to end), and reset.
 
 7. **Confirm it came up.** Reset the board and watch the **broker** for the unit's retained
-   `online` — this is the authoritative check (network truth, independent of the USB serial,
-   which a cold boot can wedge on this board). On a broker-wait timeout, fall back to a
+   `online` — this is the authoritative check (network truth, independent of the USB serial).
+   On a broker-wait timeout, fall back to a
    best-effort serial capture + LED/serial classification. Report **PASS** when the broker
    shows `online` (or the serial confirms HA bring-up); report a specific **FAIL** otherwise.
    (To *watch* the boot log live over USB, the installer runs `oselia monitor` separately — §6.2.)
@@ -319,16 +319,12 @@ diagnostics over USB to the installer's terminal, for bring-up debugging and con
 healthy boot. It **never flashes or provisions** — it only streams from a board that is
 already running MicroPython.
 
-**Why this can't be a naïve passive serial read.** This board has a dual-core USB-wedge
-quirk (see `firmware/BRINGUP.md` and the firmware boot-wedge investigation): on a **cold
-hard reset** core 1 (`net_task` — CH9120 bring-up + MQTT) starves core 0 (USB/TinyUSB)
-through the ~1–2 s enumeration window, so USB enumeration never completes and the board
-goes **invisible on USB**. So a board that just cold-booted may present no `…/cu.usbmodem*`
-to read; a board in BOOTSEL is USB *mass-storage* (`RPI-RP2` drive), not serial either —
-in both cases the monitor can only report this (it doesn't reflash; `oselia flash` /
-`oselia provision` does that). Once enumeration *has* completed, USB survives core 1; the
-proven capture technique is therefore to **hold a `mpremote` session open** (already
-enumerated) and launch the firmware *from* it, so it is never cold-booted.
+**Why this can't be a naïve passive serial read.** A running unit has no interactive REPL to
+attach to — the app's `main()` never returns — and the firmware **watchdog** (core 1)
+hard-resets the board if the tool breaks into the REPL. So the capture technique is to **hold
+an `mpremote` session open** and launch the firmware *from* it. (A board in BOOTSEL is USB
+mass-storage `RPI-RP2`, not serial — the monitor reports that and does not reflash; `oselia
+flash` / `oselia provision` does.)
 
 - **`oselia monitor`** (default) — **relaunch the firmware over a held `mpremote exec`
   session** and relay its stdout live. The board is first quiesced to a bare, watchdog-free

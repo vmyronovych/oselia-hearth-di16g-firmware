@@ -4,13 +4,7 @@ Installed ONCE via USB (provisioning); it is NEVER part of an OTA bundle, so no 
 can brick the boot path. Deliberately self-contained (no app imports until it launches
 the slot) and tiny.
 
-Why the loader lives in main.py (and there is NO boot.py): on the rp2 port MicroPython
-initialises USB-CDC (mp_usbd_init) *between* boot.py and main.py (ports/rp2/main.c).
-This loader runs the app's main() forever and never returns, so anything placed in
-boot.py would run BEFORE USB-CDC exists and the port's init would never be reached -- a
-normally-running unit would expose no USB serial (reachable only after a crash). As
-main.py, the port brings USB-CDC up natively just before we run, so the board is always
-reachable over USB while the app runs.
+The loader is main.py, not boot.py, by design (see the PR that introduced it).
 
 Responsibilities (OTA_SPEC.md "Boot-confirm / auto-revert"):
   1. read /ota/state, run the boot-confirm gate (revert a build that never proved

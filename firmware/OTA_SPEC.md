@@ -11,9 +11,7 @@ alongside `SPEC.md` (firmware behaviour) and `../provisioning/PROVISIONING_SPEC.
   loss-tolerant `OtaReceiver`, streaming `apply_bundle_file`); `tests/test_ota.py` (19).
 - `src/main.py` loader: boot-confirm gate + **safe-mode** (drops to REPL after
   `_MAX_CRASHES` failed boots so a bad slot can't reset-loop forever); installed at root,
-  never bundled. It is `main.py` (not `boot.py`) so the rp2 port initialises USB-CDC
-  natively before it runs — the loader never returns, and in `boot.py` USB-CDC (inited
-  only *between* boot.py and main.py) would never come up.
+  never bundled. It is `main.py` (not `boot.py`) by design.
 - `src/net_task.py` receiver: `ota/cmd` (version-guarded), `ota/data` chunks, NAK
   re-request of dropped chunks (`ota/nak`), staged-slot apply + reset, and `confirm()`
   once online+healthy for `OTA_BOOT_CONFIRM_MS`.
@@ -28,9 +26,7 @@ alongside `SPEC.md` (firmware behaviour) and `../provisioning/PROVISIONING_SPEC.
 - **Key HW learnings:** board subscribes `ota/data`/`ota/cmd` at **QoS0** → individual
   chunks AND the command can drop → publisher resends `cmd` till acked + the board NAKs
   missing chunks. Stream must be **paced to ~the 115200-baud UART rate** (~100-200ms per
-  1KB chunk) or the CH9120 RX buffer overflows. `machine.reset()` on this board can drop
-  USB-CDC until a cold BOOTSEL reflash — irrelevant to OTA (network), but it's why USB
-  deploys are flaky; recover via flash_nuke + reflash + the resumable slot deploy.
+  1KB chunk) or the CH9120 RX buffer overflows.
 - **Remaining:** wire the integration `UpdateEntity` to drive OTA from the HA UI
   (download bundle from a release feed + publish via the `ota_publish` logic);
   provisioning to lay down the slot layout (`main.py` loader + `/slots/a`) at install time.
@@ -86,7 +82,7 @@ tiny, OTA-immutable loader at root:
 /ota/state            # text: boot-confirm state machine fields (see below)
 ```
 
-`main.py` (runs at reset, after the port has brought USB-CDC up): read `/ota/active`,
+`main.py` (runs at reset): read `/ota/active`,
 run the **boot-confirm gate** (below), `sys.path.insert(0, "/slots/<active>")`, then
 `import app; app.main()`. The loader is deliberately ~50 lines and never updated
 remotely, so no OTA can brick the boot path. `config.py`'s `open("site.json")` stays

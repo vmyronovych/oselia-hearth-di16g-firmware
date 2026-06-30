@@ -501,8 +501,9 @@ def monitor_cmd(
 ):
     """Stream the firmware's log over USB (Ctrl-C to stop). Never flashes or provisions.
 
-    Default relaunches the firmware over a held USB session (keeping USB enumerated -- a
-    cold boot wedges USB on this board). --passive only listens to a running unit."""
+    Default relaunches the firmware over a held USB session: the app's main() never returns,
+    so a plain reset leaves no interactive REPL to stream from -- we run the loader from a
+    held session instead. --passive only listens to a running unit."""
     colorize = console.supports_color()
     target = _monitor_find_board(port)
     if passive:
@@ -533,8 +534,8 @@ def _monitor_find_board(port):
         console.die("The board is in BOOTSEL (the RPI-RP2 drive) -- that's USB mass-storage, "
                     "not serial. The monitor doesn't flash; run `oselia provision` first.")
     console.die("No RP2040-ETH on USB. The monitor streams from a board already running "
-                "MicroPython. If it vanished after provisioning, that's the cold-boot USB "
-                "wedge: recover via BOOTSEL (hold BOOT while plugging in) and re-flash.")
+                "MicroPython. If it vanished after provisioning, recover via BOOTSEL "
+                "(hold BOOT while plugging in) and re-flash.")
 
 
 # ===========================================================================

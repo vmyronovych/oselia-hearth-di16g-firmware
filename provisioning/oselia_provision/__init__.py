@@ -5,9 +5,8 @@ A Typer-based CLI that flashes MicroPython onto a bare Waveshare RP2040-ETH modu
 broker, and wraps the day-to-day mpremote board operations as first-class
 subcommands. See PROVISIONING_SPEC.md for the contract and the on-board layout.
 
-The hardware-quirk handling (USB cold-boot wedge, cooperative MQTT quiesce, BOOTSEL/
-flash_nuke flashing, atomic site.json, OTA A/B slot layout) is ported faithfully from
-the original single-file wizard -- those are HW-confirmed and must not be re-litigated.
+The hardware-quirk handling -- watchdog-resets-on-break-in, cooperative MQTT quiesce, BOOTSEL/
+flash_nuke flashing, atomic site.json, OTA A/B slot layout -- lives in this package.
 """
 
 __version__ = "0.1.0"
