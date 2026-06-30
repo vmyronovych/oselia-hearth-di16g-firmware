@@ -393,8 +393,7 @@ build-independent), with byte order set by `STATUS_LED_ORDER`.
 | Condition (priority order)      | Colour  | Pattern        |
 |---------------------------------|---------|----------------|
 | Booting / initialising          | Blue    | solid          |
-| Ethernet (CH9120 TCP) down      | Red     | slow blink (1 s)   |
-| MQTT broker session down        | Orange  | medium blink (0.6 s) |
+| MQTT broker / link down         | Orange  | medium blink (0.6 s) |
 | MCP23017 not responding         | Yellow  | fast blink (0.3 s)   |
 | All subsystems healthy          | Green   | solid          |
 | Gesture published (any input)   | White   | ~90 ms flash (overrides) |

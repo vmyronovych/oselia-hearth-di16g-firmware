@@ -168,9 +168,8 @@ rate**, showing the single highest-priority issue (root-cause first):
 | LED | Pattern | Meaning | Priority |
 |---|---|---|---|
 | 🔵 Blue | solid | Booting / initialising | startup |
-| 🔴 Red | slow blink (~1 s) | CH9120 Ethernet / TCP link down | 1 (root cause) |
-| 🟠 Orange | medium blink (~0.6 s) | MQTT broker session down | 2 |
-| 🟡 Yellow | fast blink (~0.3 s) | An MCP23017 not responding | 3 |
+| 🟠 Orange | medium blink (~0.6 s) | MQTT broker / link down | 1 (root cause) |
+| 🟡 Yellow | fast blink (~0.3 s) | An MCP23017 not responding | 2 |
 | 🟢 Green | **solid** | All healthy | — |
 | ⚪ White | brief flash (~90 ms) | A gesture was just published (activity) | overrides |
 

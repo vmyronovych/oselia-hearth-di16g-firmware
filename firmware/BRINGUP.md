@@ -8,9 +8,9 @@
 
 Tick top-to-bottom. Each stage gates the next — don't move on until the
 "expected" line is true. LED reference (status_led; one LED shows the **highest-
-priority** fault — root cause first): **blue** solid=booting, **red** slow-blink=
-ethernet/TCP down, **orange** med-blink=MQTT down, **yellow** fast-blink=an MCP not
-responding, **green** solid=all healthy, brief **white** flash=a gesture published.
+priority** fault — root cause first): **blue** solid=booting, **orange** med-blink=MQTT/link
+down, **yellow** fast-blink=an MCP not responding, **green** solid=all healthy, brief
+**white** flash=a gesture published.
 Full table + caveats in `README.md` → "Status LED".
 
 Handy terminal (run on a PC on the same LAN as the broker):
@@ -99,14 +99,12 @@ and HA steps the scripts can't do (wiring, switch presses, HA UI).
 - [x] **MCP pull (I²C line):** disconnect SDA/SCL → read fails `EIO`, LED **yellow**
       fast-blink, board stays **online** (no reboot); reconnect → auto re-init within
       `MCP_HEALTHCHECK_MS`, back to **green**, presses resume. *(verified on hardware)*
-- [x] **Ethernet pull / sustained outage:** unplug cable (or stop broker) → MQTT keepalive
-      (PINGREQ/PINGRESP) detects the dead link → LED **orange (MQTT down)** — **NOT red**: with
-      `TCPCS` disabled `eth_ok` stays True (link assumed up), so the outage presents as
-      MQTT-down. Board stays up, reconnects via CH9120 re-bring-up + exponential backoff (cap
-      `RECONNECT_BACKOFF_MAX_MS`); replug → back to **green**, unit re-online on the broker.
-      The blocking reconnect keeps core1's heartbeat ticking, so a long outage does **not**
-      starve the watchdog. *(verified on hardware: orange not red; no reboot; no `core1
-      stalled`; unit re-online after replug.)*
+- [x] **Ethernet pull / sustained outage:** unplug cable (or stop broker) → LED **orange
+      (MQTT/link down)**, board stays up, reconnects via CH9120 re-bring-up + exponential
+      backoff (cap `RECONNECT_BACKOFF_MAX_MS`); replug → back to **green**, unit re-online on
+      the broker. The blocking reconnect keeps core1's heartbeat ticking, so a long outage
+      does **not** starve the watchdog. *(verified on hardware: no reboot; no `core1 stalled`;
+      unit re-online after replug.)*
 - [x] **Watchdog:** suspend core1's WDT feed (host raw-REPL session) → board hard-resets at
       ~8 s; `machine.reset_cause()` reports `WDT_RESET`. *(verified on hardware)*
 

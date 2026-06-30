@@ -49,7 +49,6 @@ def _beat(shared, led, mono):
         if shared.ready:
             led.boot_done()
         h = shared.health()
-        led.set_state("ethernet", h["ethernet"])
         led.set_state("mqtt", h["mqtt"])
         led.set_state("mcp", h["mcp"])
         led.update(mono.ms())
