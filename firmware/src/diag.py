@@ -1,11 +1,10 @@
-"""Diagnostics telemetry -- a small retained JSON snapshot + HA discovery sensors.
+"""Diagnostics telemetry -- a small retained JSON snapshot.
 
 The firmware publishes one compact retained message to `<base>/<id>/diag/state`
 (firmware version, uptime, link/broker/board health, free heap, reconnect and
-dropped-event counters, last input) and a handful of HA MQTT-discovery entities
-(entity_category=diagnostic) that render it under the existing device. So the
-customer sees basic operating parameters in the Home Assistant app with no extra
-service.
+dropped-event counters, last input). The OSELIA integration declares the matching
+diagnostic entities (entity_category=diagnostic) itself, so the customer sees basic
+operating parameters in the Home Assistant app with no extra service.
 
 Sending is OFF-able per install (`cfg.DIAG_ENABLE`, set by the provisioning wizard)
 and -- crucially -- is gated in net_task so it never delays a button publish: the
@@ -141,103 +140,9 @@ def format_ip(leased_ip, use_dhcp, local_ip):
     return ip_str(use_dhcp, local_ip)
 
 
-# ---- HA discovery for the diagnostic entities ----
-# (key, friendly name, component, value_template, extra config fields)
-DIAG_SENSORS = (
-    ("uptime", "Uptime", "sensor", "{{ value_json.uptime_s }}",
-     {"unit_of_measurement": "s", "device_class": "duration",
-      "state_class": "measurement"}),
-    ("mem_free", "Free memory", "sensor", "{{ value_json.mem_free }}",
-     {"unit_of_measurement": "B", "device_class": "data_size",
-      "state_class": "measurement"}),
-    ("temperature", "Temperature", "sensor", "{{ value_json.temp_c }}",
-     {"unit_of_measurement": "°C", "device_class": "temperature",
-      "state_class": "measurement"}),
-    ("reconnects", "Reconnects", "sensor", "{{ value_json.reconnects }}",
-     {"state_class": "total_increasing", "icon": "mdi:restart"}),
-    ("dropped", "Dropped events", "sensor", "{{ value_json.dropped }}",
-     {"state_class": "total_increasing", "icon": "mdi:trash-can-outline"}),
-    ("boards", "Input boards online", "sensor", "{{ value_json.boards }}",
-     {"icon": "mdi:chip"}),
-    ("board_addrs", "Board addresses", "sensor",
-     "{{ value_json.board_addrs | join(', ') }}",
-     {"icon": "mdi:identifier"}),
-    ("last_input", "Last input", "sensor", "{{ value_json.last }}",
-     {"icon": "mdi:gesture-tap-button"}),
-    ("ip", "IP address", "sensor", "{{ value_json.ip }}",
-     {"icon": "mdi:ip-network"}),
-    ("ethernet", "Ethernet link", "binary_sensor",
-     "{{ 'ON' if value_json.eth else 'OFF' }}",
-     {"device_class": "connectivity", "payload_on": "ON", "payload_off": "OFF"}),
-)
-
-
-def diag_discovery_topic(cfg, device_id, component, key):
-    return "{}/{}/{}/diag_{}/config".format(
-        cfg.DISCOVERY_PREFIX, component, device_id, key)
-
-
-def diag_discovery_payload(cfg, device_id, key, name, value_template, extra):
-    payload = {
-        "name": name,
-        "unique_id": "{}_{}_diag_{}".format(cfg.BASE_TOPIC, device_id, key),
-        "state_topic": state_topic(cfg, device_id),
-        "value_template": value_template,
-        "availability_topic": ha.availability_topic(cfg, device_id),
-        "payload_available": "online",
-        "payload_not_available": "offline",
-        "entity_category": "diagnostic",
-        # Go "unavailable" if telemetry stops (e.g. a wedged board), at 3x the
-        # publish interval. These all ride the periodic diag/state message.
-        "expire_after": getattr(cfg, "DIAG_INTERVAL_S", 10) * 3,
-        "device": ha.device_block(cfg, device_id),
-        "origin": ha.origin_block(cfg),
-    }
-    payload.update(extra)
-    return payload
-
-
 # ---- log mirror (last WARN/ERROR line surfaced in HA) ----
 def log_topic(cfg, device_id):
     return ha.base(cfg, device_id) + "/diag/log"
-
-
-def log_discovery_payload(cfg, device_id):
-    # No expire_after: logs are event-driven (published only on a new line), so the
-    # last line should persist rather than go "unavailable" during quiet periods.
-    return {
-        "name": "Last log",
-        "unique_id": "{}_{}_diag_log".format(cfg.BASE_TOPIC, device_id),
-        "state_topic": log_topic(cfg, device_id),
-        "value_template": "{{ value_json.line }}",
-        "json_attributes_topic": log_topic(cfg, device_id),
-        "availability_topic": ha.availability_topic(cfg, device_id),
-        "payload_available": "online",
-        "payload_not_available": "offline",
-        "entity_category": "diagnostic",
-        "icon": "mdi:text-box-outline",
-        "device": ha.device_block(cfg, device_id),
-        "origin": ha.origin_block(cfg),
-    }
-
-
-def publish_diag_discovery(client, cfg, device_id, settle_ms=None):
-    """Publish the diagnostic entities' discovery configs (retained), once per
-    connect alongside the action discovery. `settle_ms` paces the CH9120 like the
-    action-discovery path does."""
-    for key, name, component, tmpl, extra in DIAG_SENSORS:
-        topic = diag_discovery_topic(cfg, device_id, component, key)
-        payload = json.dumps(
-            diag_discovery_payload(cfg, device_id, key, name, tmpl, extra))
-        client.publish(topic, payload, retain=True)
-        if settle_ms:
-            settle_ms()
-    # the "Last log" sensor (separate state topic from diag/state)
-    client.publish(
-        "{}/sensor/{}/diag_log/config".format(cfg.DISCOVERY_PREFIX, device_id),
-        json.dumps(log_discovery_payload(cfg, device_id)), retain=True)
-    if settle_ms:
-        settle_ms()
 
 
 def publish_state(client, cfg, device_id, state):

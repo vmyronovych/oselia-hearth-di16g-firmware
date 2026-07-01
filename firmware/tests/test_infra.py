@@ -12,10 +12,6 @@ import ha_discovery as ha                      # noqa: E402
 
 class _Cfg:
     BASE_TOPIC = "hearth"
-    DISCOVERY_PREFIX = "homeassistant"
-    DEVICE_NAME = "GW"; DEVICE_MODEL = "m"; DEVICE_MANUFACTURER = "DIY"
-    SW_VERSION = "0.1.0"
-    INPUT_NAME_OVERRIDES = {(2, 5): "garage"}
 
 
 # ---------------- event_queue ----------------
@@ -139,10 +135,10 @@ def test_parse_publish_roundtrip():
 def test_index_split_roundtrip():
     for board in range(1, 9):              # up to 8 boards
         for pin in range(1, 17):
-            idx = ha.make_index(board, pin)
+            idx = (board - 1) * 16 + pin
             assert ha.split_index(idx) == (board, pin), (board, pin)
-    assert ha.make_index(1, 1) == 1
-    assert ha.make_index(8, 16) == 128     # 8 chips x 16
+    assert ha.split_index(1) == (1, 1)
+    assert ha.split_index(128) == (8, 16)  # 8 chips x 16
     assert ha.split_index(17) == (2, 1)    # first pin of board 2
 
 
@@ -152,49 +148,14 @@ def test_action_topic_board_pin():
         "hearth/AABBCC/board2/input5/action"
 
 
-def test_name_override_and_default():
-    c = _Cfg()
-    assert ha.input_name(c, 2, 5) == "garage"        # overridden
-    assert ha.input_name(c, 1, 3) == "board1_input3"  # default
-
-
-def test_discovery_payload_shape():
-    c = _Cfg()
-    p = ha.discovery_payload(c, "AABBCC", 3, 7, "double")
-    assert p["automation_type"] == "trigger"
-    assert p["type"] == "button_double_press"
-    assert p["subtype"] == "board3_input7"
-    assert p["payload"] == "double"
-    assert p["topic"] == "hearth/AABBCC/board3/input7/action"
-
-
-def test_event_discovery_payload_shape():
-    c = _Cfg()
-    t = ha.event_discovery_topic(c, "AABBCC", 2, 5)
-    assert t == "homeassistant/event/AABBCC/b2_in5/config"
-    p = ha.event_discovery_payload(c, "AABBCC", 2, 5)
-    assert p["name"] == "garage"                       # name override honored
-    assert p["unique_id"] == "hearth_AABBCC_b2_in5_event"
-    assert p["state_topic"] == "hearth/AABBCC/board2/input5/action"
-    assert p["event_types"] == ["single", "double", "long"]
-    assert p["device_class"] == "button"
-    assert "event_type" in p["value_template"]         # wraps payload to JSON
-    assert p["device"]["identifiers"] == ["hearth_AABBCC"]
-
-
-def test_tunable_number_and_select_payloads():
+def test_tunable_limits_and_cfg_state():
     c = _Cfg()
     assert ha.cfg_state_topic(c, "AABBCC") == "hearth/AABBCC/cfg"
-    n = ha.number_discovery_payload(c, "AABBCC", "long_ms", "Long press", 100, 2000, 50)
-    assert n["command_topic"] == "hearth/AABBCC/cmd/long_ms"
-    assert n["state_topic"] == "hearth/AABBCC/cfg"
-    assert n["value_template"] == "{{ value_json.long_ms }}"
-    assert n["min"] == 100 and n["max"] == 2000 and n["step"] == 50
-    s = ha.log_level_select_payload(c, "AABBCC")
-    assert s["command_topic"] == "hearth/AABBCC/cmd/log_level"
-    assert s["options"] == ["ERROR", "WARN", "INFO", "DEBUG"]
-    assert "value_json.log_level" in s["value_template"]
+    # the clamp limits the command handler enforces (mirrored by the integration)
     assert ha.TUNABLE_LIMITS["debounce_ms"] == (0, 100)
+    assert ha.TUNABLE_LIMITS["long_ms"] == (100, 2000)
+    assert ha.TUNABLE_LIMITS["double_gap_ms"] == (0, 1000)
+    assert ha.LOG_LEVEL_OPTIONS == ("ERROR", "WARN", "INFO", "DEBUG")
     cfg = ha.cfg_state_payload(400, 0, 5, 2)
     assert cfg == {"long_ms": 400, "double_gap_ms": 0, "debounce_ms": 5,
                    "log_level": 2}
@@ -213,18 +174,9 @@ def test_detector_set_params_live_retune():
     assert m._det[1].long_ms == 120 and m._det[2].double_gap_ms == 30
 
 
-def test_command_topics_and_button_payload():
+def test_command_sub_topic():
     c = _Cfg()
     assert ha.command_sub_topic(c, "AABBCC") == "hearth/AABBCC/cmd/#"
-    assert ha.command_topic(c, "AABBCC", "identify") == "hearth/AABBCC/cmd/identify"
-    t = ha.button_discovery_topic(c, "AABBCC", "reboot")
-    assert t == "homeassistant/button/AABBCC/reboot/config"
-    p = ha.button_discovery_payload(c, "AABBCC", "reboot", "Restart", "reboot",
-                                    {"device_class": "restart", "entity_category": "config"})
-    assert p["command_topic"] == "hearth/AABBCC/cmd/reboot"
-    assert p["payload_press"] == "PRESS"
-    assert p["device_class"] == "restart"
-    assert p["unique_id"] == "hearth_AABBCC_reboot"
 
 
 def _all_tests():

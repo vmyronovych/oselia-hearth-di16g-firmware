@@ -13,12 +13,12 @@ doc owns the **HA-side** contract.
 
 ## Why this exists
 
-1. **Branding / "market ready," not DIY.** With MQTT discovery the gateway is filed
-   under the **MQTT** integration tile in Settings → Devices & Services. The *device*
-   card already looks branded (manufacturer/model/serial via `device_block`), but the
-   integration attribution can't be changed from MQTT discovery — there is no flag for
-   it. Owning a domain (`oselia`) is the only way to get our own tile, logo, and a
-   real "Add integration" config flow.
+1. **Branding / "market ready," not DIY.** Under the old firmware-published MQTT
+   discovery, the gateway was filed under the **MQTT** integration tile in Settings →
+   Devices & Services. The *device* card looked branded (manufacturer/model/serial in the
+   discovery `device` block), but the integration attribution can't be changed from MQTT
+   discovery — there is no flag for it. Owning a domain (`oselia`) is the only way to get
+   our own tile, logo, and a real "Add integration" config flow.
 2. **OTA needs a home.** HA's native `update` entity (`UpdateEntity`) is the modern,
    in-brand way to surface "Update available → Install" with progress and release
    notes. A custom integration can own it fully: poll our release feed for the latest
@@ -211,20 +211,20 @@ to drive an incompatible board rather than mis-render it.
 
 ---
 
-## Migration from today's MQTT-discovery setup
+## Migration from the old MQTT-discovery setup
 
-This integration **supersedes** firmware-published discovery:
+This integration **supersedes** firmware-published discovery, which has now been **removed
+from the firmware entirely**:
 
-- **Firmware** *(implemented)*: a `HA_INTEGRATION` config flag (`"oselia"` default, or the
-  legacy `"mqtt"`) gates whether the firmware publishes `homeassistant/.../config` payloads.
-  In `"oselia"` mode `net_task` skips all `publish_*_discovery` calls but still
-  subscribes to `…/cmd/#` and seeds `…/cfg`, so commands and the number/select state
-  work unchanged. The data/command topics stay; `ha_discovery.py`'s *topic builders*
-  remain the contract, its *discovery publishers* are simply not called. The `oselia` tool
-  always writes `site.json` `"ha_integration":"oselia"`. If migrating a unit that previously
-  ran MQTT-discovery mode, **clear its retained discovery topics** so HA's MQTT integration
-  drops the duplicate device (`oselia board exec` an empty-retained publish, or clear via
-  `mosquitto_pub`).
+- **Firmware** *(done)*: the firmware publishes **no** `homeassistant/.../config` payloads.
+  `net_task` subscribes to `…/cmd/#` and seeds `…/cfg` on every connect, so commands and
+  the number/select state work; the data/command topics in `ha_discovery.py` remain the
+  contract. The legacy `HA_INTEGRATION` flag and all `publish_*_discovery` builders were
+  deleted. The `oselia` tool still writes `site.json` `"ha_integration":"oselia"` so a board
+  running *older* firmware (which defaulted to `"mqtt"`) is forced out of discovery.
+- **Migrating a unit that previously ran MQTT-discovery mode:** **clear its retained
+  discovery topics** so HA's built-in MQTT integration drops the now-duplicate device
+  (empty-retained publish to each `homeassistant/.../config`, e.g. via `mosquitto_pub`).
 - **Provisioning**: the host tool flashes/provisions the unit (always OSELIA mode) and does
   **not** touch Home Assistant. The OSELIA integration is installed via HACS and configured
   in HA (broker + firmware release feed); the dashboard is rendered with `oselia dashboard
@@ -237,9 +237,9 @@ This integration **supersedes** firmware-published discovery:
 ## Firmware impact (minimal)
 
 - No wire-format change; `mqtt_packets.py` and the broker session are untouched.
-- **Done:** `HA_INTEGRATION` flag (`config.py` + `site.json` overlay) gates discovery
-  publishing; `net_task` skips `publish_*_discovery` in `"oselia"` mode while keeping
-  the command subscribe + `…/cfg` seed. Provisioning sets it via `--oselia`.
+- **Done:** the firmware-published HA discovery path was **removed** — no
+  `publish_*_discovery`, no `HA_INTEGRATION` flag. `net_task` keeps the command subscribe
+  + `…/cfg` seed on every connect. The data/command topics are unchanged.
 - Add OTA on-device pieces per `../firmware/docs/ota.md` (loader, slots, `ota.py`, `…/ota/*`).
 - Add a protocol-version field to `diag/state`.
 

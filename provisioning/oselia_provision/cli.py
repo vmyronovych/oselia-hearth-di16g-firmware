@@ -123,8 +123,6 @@ def provision(
     boards: int = typer.Option(None, min=1, max=MAX_BOARDS,
                                help="Pin an explicit board count (1-%d) instead of "
                                     "auto-discovering MCP chips." % MAX_BOARDS),
-    names: str = typer.Option(None, metavar="FILE",
-                              help="CSV of board,pin,name for on-device name overrides."),
     no_diag: bool = typer.Option(False, "--no-diag",
                                  help="Disable diagnostics telemetry on the unit."),
     skip_mpy_check: bool = typer.Option(False, "--skip-mpy-check",
@@ -154,12 +152,6 @@ def provision(
         except ValueError:
             console.die("--static must be IP/GW/MASK, e.g. "
                         "192.168.1.50/192.168.1.1/255.255.255.0")
-
-    name_rows = None
-    if names:
-        with open(names) as f:
-            name_rows = siteconfig.parse_names_csv(f.read())
-        console.info("Loaded %d name override(s)." % len(name_rows))
 
     # 1. board + up-front quiesce. The firmware watchdog resets the board whenever mpremote
     # breaks in, corrupting the version check, the site.json read-back AND fs cp. Quiesce
@@ -200,7 +192,7 @@ def provision(
 
         site = siteconfig.build_site_dict(
             broker_ip, broker_port, muser, mpass, board_count=boards, use_dhcp=True,
-            static=static_d, names=name_rows, diag=not no_diag)
+            static=static_d, diag=not no_diag)
         if existing:                           # preserve board-written live tunables
             for k in ("long_ms", "double_gap_ms", "debounce_ms", "log_level"):
                 if k in existing and k not in site:

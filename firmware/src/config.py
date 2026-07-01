@@ -94,39 +94,10 @@ DOUBLE_GAP_MS = 0              # double-tap detection window, ms.
 # DEVICE_ID is normally derived from machine.unique_id() at runtime; this is a
 # fallback / override.
 DEVICE_ID = None               # None -> derive from unique_id() last 6 hex
-DEVICE_NAME = "Hearth"
-DEVICE_MODEL = "Hearth (DI16-G)"
-DEVICE_MANUFACTURER = "OSELIA"
 SW_VERSION = "0.9.0"
-HW_VERSION = "DI16-G"                   # board model (shown as Hardware in HA)
-PROJECT_URL = "https://github.com/vmyronovych/oselia-hearth-di16g-firmware"  # HA discovery origin
+HW_VERSION = "DI16-G"                   # board model (reported in diag/state)
 
 BASE_TOPIC = "hearth"             # -> hearth/<device_id>/...
-DISCOVERY_PREFIX = "homeassistant"     # HA default
-
-# How inputs appear in HA: "event" (modern entity per input; shows in dashboards &
-# logbook, and what the shipped blueprint targets), "trigger" (device_automation
-# triggers, the original), or "both". "both" doubles discovery traffic on connect.
-INPUT_DISCOVERY = "both"
-
-# Which Home Assistant integration consumes this device:
-#   "mqtt"   -> the firmware publishes HA MQTT-discovery configs (homeassistant/.../
-#               config, retained); the device appears under HA's built-in MQTT
-#               integration. Legacy: no longer the default, and the host tool no longer
-#               provisions it -- kept only so an explicit site.json override still works.
-#   "oselia" -> the firmware SKIPS publishing those discovery configs; the first-party
-#               OSELIA custom integration (its own repo, vmyronovych/oselia-hearth-di16g-ha)
-#               creates the entities itself, so the device appears under OSELIA, not MQTT.
-#               This is the DEFAULT.
-# The data + command topics are IDENTICAL in both modes -- only discovery publishing
-# differs -- so a unit can switch modes with no other change. Normally set per install by
-# the host tool (which always writes "oselia"). See homeassistant/INTEGRATION_SPEC.md.
-HA_INTEGRATION = "oselia"
-
-# Friendly-name overrides keyed by (board, pin), both 1-based (pin 1..16).
-# Anything not listed defaults to "board<b>_input<p>". Example:
-#   INPUT_NAME_OVERRIDES = {(1, 1): "kitchen_main", (2, 5): "garage_door"}
-INPUT_NAME_OVERRIDES = {}
 
 # ---------------------------------------------------------------------------
 # Robustness / dual-core (industrial-grade)
@@ -147,7 +118,6 @@ MQTT_CONNECT_TIMEOUT_MS = 4000     # wait for CONNACK
 PING_RESPONSE_TIMEOUT_MS = 5000    # no PINGRESP within this -> treat link dead
 RECONNECT_BACKOFF_MIN_MS = 1000    # first retry delay
 RECONNECT_BACKOFF_MAX_MS = 30000   # cap
-DISCOVERY_REPUBLISH_ON_RECONNECT = True
 
 # I2C resilience + MCP recovery (an MCP fault must never freeze inputs or reboot)
 I2C_RETRIES = 3                # retry count for MCP reads/writes
@@ -257,9 +227,6 @@ try:
         MCP_AUTODISCOVER = False
     if "diag" in _site:
         DIAG_ENABLE = bool(_site["diag"])
-    if "ha_integration" in _site:
-        # "mqtt" (publish HA discovery) or "oselia" (custom integration owns entities).
-        HA_INTEGRATION = _site["ha_integration"]
     # Live-tunable values persisted by the board itself when changed from HA
     # (number/select entities). They override the hardware defaults on next boot.
     if "long_ms" in _site:
@@ -276,8 +243,6 @@ try:
         LOCAL_IP = _ip4(_s["ip"])
         GATEWAY = _ip4(_s["gateway"])
         SUBNET_MASK = _ip4(_s["mask"])
-    if _site.get("names"):                 # rows of [board, pin, name] (1-based)
-        INPUT_NAME_OVERRIDES = {(int(b), int(p)): n for b, p, n in _site["names"]}
     del _site, _f
 except OSError:
     pass   # no site.json -> use the defaults above (bench / dev)

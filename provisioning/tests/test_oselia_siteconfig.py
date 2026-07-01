@@ -24,28 +24,11 @@ def test_board_count_to_addrs():
             pass
 
 
-def test_parse_names_csv():
-    text = ("# a comment\n"
-            "board,pin,name\n"          # header skipped
-            "1,1,Hall\n"
-            "2, 16 , Kitchen \n"
-            "\n")                        # blank skipped
-    assert s.parse_names_csv(text) == [[1, 1, "Hall"], [2, 16, "Kitchen"]]
-
-
-def test_parse_names_csv_out_of_range():
-    for bad in ("1,17,X", "9,1,X", "0,1,X"):
-        try:
-            s.parse_names_csv(bad)
-            assert False, "expected ValueError for %r" % bad
-        except ValueError:
-            pass
-
-
 def test_build_site_dict_minimal():
     site = s.build_site_dict("192.168.1.5", 1883, None, None)
-    # OSELIA is the only integration mode, so it's always written explicitly (the firmware's
-    # own default is still "mqtt"). diag-on stays omitted to keep the file minimal.
+    # OSELIA is the only integration mode, always written explicitly. Current firmware
+    # ignores the key; it's kept to force OLDER firmware (default "mqtt") out of discovery.
+    # diag-on stays omitted to keep the file minimal.
     assert site == {"broker_ip": "192.168.1.5", "broker_port": 1883,
                     "mqtt_user": None, "mqtt_pass": None, "use_dhcp": True,
                     "ha_integration": "oselia"}
@@ -56,13 +39,12 @@ def test_build_site_dict_full():
     site = s.build_site_dict(
         "10.0.0.2", 8883, "u", "p", board_count=2,
         static={"ip": "10.0.0.50", "gateway": "10.0.0.1", "mask": "255.255.255.0"},
-        names=[[1, 1, "Hall"]], diag=False)
+        diag=False)
     assert site["use_dhcp"] is False            # static forces DHCP off
     assert site["static"]["ip"] == "10.0.0.50"
     assert site["board_count"] == 2
     assert site["diag"] is False
     assert site["ha_integration"] == "oselia"   # always oselia
-    assert site["names"] == [[1, 1, "Hall"]]
 
 
 def test_build_site_dict_rejects_non_numeric_broker():

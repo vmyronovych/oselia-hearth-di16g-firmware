@@ -2,11 +2,12 @@
 
 MicroPython firmware for a Waveshare **RP2040-ETH** board that reads 16 isolated
 24 V wall-switch inputs via an **MCP23017**, classifies each press as
-**single / double / long**, and surfaces them in Home Assistant over MQTT Discovery —
-as `event` entities and/or `device_automation` triggers. It also publishes **device
-diagnostics** (uptime, free heap, die temperature, link/board health, last log) and
-accepts **two-way control** (Restart / Identify buttons, live-tunable gesture timings
-and log level). See `docs/spec.md §5`.
+**single / double / long**, and publishes them to Home Assistant over MQTT. The
+first-party **OSELIA** HA integration declares all the entities (inputs, diagnostics,
+controls); the firmware publishes only the data + command topics, **not** HA
+MQTT-discovery configs. It also publishes **device diagnostics** (uptime, free heap,
+die temperature, link/board health, last log) and accepts **two-way control** (Restart
+/ Identify buttons, live-tunable gesture timings and log level). See `docs/spec.md §5`.
 
 > **Networking note:** the RP2040-ETH uses a **CH9120 UART-to-Ethernet bridge**
 > (not a W5500). The RP2040 has no socket API — the CH9120 holds the TCP/IP stack.
@@ -138,11 +139,11 @@ above; for an interactive bring-up of a fresh board, follow `docs/bringup.md`.
 ## MQTT topics
 
 `<id>` = device id — the last 6 hex of the RP2040 `unique_id` (e.g. `893922`), or
-`DEVICE_ID` from `config.py` if set. Prefixes come from `config.py`: `BASE_TOPIC`
-(default `hearth`) and `DISCOVERY_PREFIX` (default `homeassistant`). Boards are
+`DEVICE_ID` from `config.py` if set. The topic prefix comes from `config.py`:
+`BASE_TOPIC` (default `hearth`). Boards are
 `board1`…`boardN`, inputs `input1`…`input16`, gestures `single` / `double` / `long`.
 
-The most common few (full table, payloads, discovery configs, and the `diag/state`
+The most common few (full table, payloads, and the `diag/state`
 schema are in **[`docs/mqtt-contract.md`](docs/mqtt-contract.md)** — the canonical wire
 contract):
 
@@ -150,14 +151,14 @@ contract):
 |---|---|---|---|
 | Button press (action) | `hearth/<id>/board<B>/input<N>/action` | `single` \| `double` \| `long` | no |
 | Availability (LWT) | `hearth/<id>/status` | `online` \| `offline` | yes |
-| HA discovery | `homeassistant/<component>/<id>/…/config` | discovery JSON | yes |
+| Command (HA→dev) | `hearth/<id>/cmd/<name>` | e.g. `PRESS`, a number, a level | no |
+| Tunable state | `hearth/<id>/cfg` | JSON of the live timings + log level | yes |
 
-Examples: `hearth/893922/board1/input2/action` → `single`;
-`homeassistant/event/893922/b1_in2/config`.
+Example: `hearth/893922/board1/input2/action` → `single`. The firmware publishes **no**
+`homeassistant/.../config` discovery — the OSELIA integration declares the entities.
 
 To inspect on the broker (MQTTX or `mosquitto_sub -h <broker> -v`):
 - `hearth/<id>/#` — availability, presses (live, not retained), `diag/*`, `cfg`.
-- `homeassistant/#` — all retained discovery configs for every component above.
 - Or use `tools/watch.sh diag` for the diagnostics topics specifically.
 
 ## Status LED
@@ -205,7 +206,7 @@ bounded queue, wrap-safe timing — see `docs/spec.md` §12.
 
 **Implementation complete and host-tested**, with the full HA-integration layer
 (diagnostics, `event` entities, two-way control, live tuning, provisioning auto-setup)
-**verified on hardware against a local HA 2025.11** (`docs/spec.md §5.1a–5.4`). Hardware
+**verified on hardware against a local HA 2025.11** (`docs/spec.md §5.1–5.4`). Hardware
 facts are confirmed from a working POC (`docs/hardware.md`). Host tests cover the detector,
 debounce, status LED, event queue, monotonic clock, MQTT packet framing, and the
 diagnostics/discovery builders.

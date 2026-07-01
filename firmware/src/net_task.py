@@ -448,13 +448,6 @@ def run(shared, queue, device_id):
                 log_stash[0] = (log.level_name(lvl), msg)
         log.set_sink(_log_sink)
 
-    def _disc_settle():
-        # Heartbeat + LED between discovery publishes: a multi-board republish can
-        # take seconds (8 boards ~= 384 msgs), and it must not look like a core1
-        # stall to core0's WDT gate.
-        _beat(shared, led, mono)
-        utime.sleep_ms(20)
-
     while True:
         # Arm the watchdog once the network is up (not before -- the multi-second
         # CH9120/MQTT bring-up must not trip it). From here _beat() feeds it.
@@ -490,45 +483,19 @@ def run(shared, queue, device_id):
                             _ota_publish_state("idle", target=cfg.SW_VERSION, percent=100)
                     except Exception:
                         pass
-                if first_connect or cfg.DISCOVERY_REPUBLISH_ON_RECONNECT:
-                    # In "oselia" mode the first-party custom integration owns the HA
-                    # entities, so the firmware skips publishing MQTT-discovery configs.
-                    # The data + command topics are identical either way; only the
-                    # homeassistant/.../config publishing is gated. The command
-                    # subscribe and the cfg seed are NOT gated -- commands and the HA
-                    # number/select state work in both modes. See INTEGRATION_SPEC.md.
-                    publish_disc = getattr(cfg, "HA_INTEGRATION", "oselia") == "mqtt"
-                    if publish_disc:
-                        mode = getattr(cfg, "INPUT_DISCOVERY", "both")
-                        if mode in ("trigger", "both"):
-                            ha.publish_discovery(client, cfg, device_id, n_boards,
-                                                 settle_ms=_disc_settle)
-                        if mode in ("event", "both"):
-                            ha.publish_event_discovery(client, cfg, device_id, n_boards,
-                                                       settle_ms=_disc_settle)
-                        log.info("HA discovery published (%d inputs, %s)" % (
-                            n_boards * 16, mode))
-                    else:
-                        log.info("HA discovery skipped (oselia integration mode)")
-                    if cfg.CONTROL_ENABLE:
-                        # clean-session drops subs on disconnect -> re-subscribe here
-                        # (needed in BOTH modes so commands keep working).
-                        client.subscribe(ha.command_sub_topic(cfg, device_id))
-                        if publish_disc:
-                            ha.publish_command_discovery(client, cfg, device_id,
-                                                         settle_ms=_disc_settle)
-                            ha.publish_tunable_discovery(client, cfg, device_id,
-                                                         settle_ms=_disc_settle)
-                        _publish_cfg()       # seed number/select values (both modes:
-                                             # the oselia entities also read <base>/<id>/cfg)
-                    if cfg.OTA_ENABLE:
-                        # clean-session: re-subscribe to the OTA command + data topics
-                        # on every (re)connect.
-                        client.subscribe(ota_cmd_topic)
-                        client.subscribe(ota_data_topic)
-                    if cfg.DIAG_ENABLE and publish_disc:
-                        diag.publish_diag_discovery(
-                            client, cfg, device_id, settle_ms=_disc_settle)
+                # The first-party OSELIA integration declares all HA entities itself,
+                # so the firmware publishes no MQTT-discovery configs -- only the data +
+                # command wire contract. A clean session drops subscriptions on every
+                # disconnect, so re-subscribe and re-seed the cfg state unconditionally
+                # on each (re)connect. See homeassistant/INTEGRATION_SPEC.md.
+                if cfg.CONTROL_ENABLE:
+                    client.subscribe(ha.command_sub_topic(cfg, device_id))
+                    _publish_cfg()       # seed number/select values (the oselia
+                                         # entities read <base>/<id>/cfg)
+                if cfg.OTA_ENABLE:
+                    # clean-session: re-subscribe to the OTA command + data topics.
+                    client.subscribe(ota_cmd_topic)
+                    client.subscribe(ota_data_topic)
                 if not first_connect:
                     reconnects += 1
                 first_connect = False

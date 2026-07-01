@@ -203,7 +203,7 @@ The wizard does **not** ask the installer to edit `config.py`. It generates the
 per-install values and writes them. **Chosen: option (b)** —
 
 - **(b) A tiny machine-owned `site.json`** (broker, creds, dhcp, board count,
-  optional name rows, optional `diag` opt-out, optional `ha_integration` mode) that `../firmware/src/config.py` reads and overlays onto fixed,
+  optional `diag` opt-out, and `ha_integration` — always `"oselia"`) that `../firmware/src/config.py` reads and overlays onto fixed,
   never-touched hardware defaults. Clean separation of installer data vs. hardware
   facts; idempotent re-provision rewrites only this file. The firmware change is
   the small guarded overlay block at the end of `../firmware/src/config.py`.
@@ -244,13 +244,12 @@ first install.
 
 ---
 
-## 5. Switch naming — Home Assistant first, on-device optional
+## 5. Switch naming — Home Assistant only
 
-Decision: **support both, default to Home Assistant.**
+Decision: **naming lives in Home Assistant.**
 
-- **Default (HA-side).** The firmware publishes generic
-  `board<b>_input<p>` triggers; HA auto-creates the device and all
-  inputs × gestures. The installer names "which switch is what" in the HA UI —
+- **Where it happens.** The OSELIA integration creates the device and all input
+  entities; the installer names "which switch is what" in the HA UI —
   a rename, not a redeploy. The wizard does **not** prompt for names.
 
 - **To make HA-side mapping painless:** rely on a *learn affordance* (proposed
@@ -261,11 +260,8 @@ Decision: **support both, default to Home Assistant.**
   needed. *(This is a firmware feature, specced here only as the reason the
   wizard can skip naming; tracked separately.)*
 
-- **Optional (on-device).** `INPUT_NAME_OVERRIDES` in the config still works for
-  installers who want friendly names baked into discovery. The wizard MAY expose
-  this behind an advanced flag (e.g. accept a `--names names.csv` file mapping
-  `board,pin,name`) but never prompts for it interactively on the happy path.
-  Changing an on-device name means re-running the wizard / redeploying.
+On-device name overrides were removed: they only ever surfaced *in HA MQTT discovery*,
+which the firmware no longer publishes. Names are set in the HA UI.
 
 ---
 
@@ -279,7 +275,6 @@ Kept out of the interactive flow so the common case stays ≤3 questions:
   writes `board_count`, which disables `MCP_AUTODISCOVER` on the board.
 - `--port <serial>` — skip USB auto-detect / disambiguate multiple boards.
 - `--broker <ip[:port]>` — skip mDNS discovery (headless / scripted installs).
-- `--names <file>` — on-device name overrides (see §5).
 - `--skip-mpy-check` — skip the MicroPython version check / auto-flash (step 1a).
 - `--mpy-uf2 <path>` — flash this local UF2 instead of downloading (offline installs).
 - `--no-diag` — disable diagnostics telemetry on the unit; writes `"diag": false`
@@ -289,8 +284,9 @@ Kept out of the interactive flow so the common case stays ≤3 questions:
 - `--dry-run` — show what would be written without touching the board.
 
 **Home Assistant is out of scope of provisioning.** Every unit is provisioned for the
-**OSELIA integration** (`site.json` always gets `"ha_integration": "oselia"`, so the
-firmware skips MQTT discovery — legacy `"mqtt"` mode is no longer provisioned). The tool
+**OSELIA integration** (`site.json` always gets `"ha_integration": "oselia"`). The current
+firmware publishes no MQTT discovery at all; the key is still written so a board on *older*
+firmware — which defaulted to the removed `"mqtt"` mode — is forced out of discovery. The tool
 does **not** touch HA: the OSELIA integration is installed via HACS and configured in HA
 (broker + firmware release feed), and the dashboard is rendered locally with `oselia
 dashboard render` for manual upload. See `../homeassistant/INTEGRATION_SPEC.md`.

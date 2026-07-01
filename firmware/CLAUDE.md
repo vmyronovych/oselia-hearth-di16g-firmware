@@ -57,25 +57,26 @@ All pins live in `config.py` — **never hard-code**. The essentials you must no
 Complete and host-tested; the full feature set is also **HA-verified on hardware**
 (local HA 2025.11). Beyond the core (detector, debounce, queue, clock, mqtt_packets,
 CH9120 driver, MCP driver, MQTT client, both task loops, `main`), the firmware now
-includes a **Home Assistant integration layer** (see docs/spec.md §5.1a–5.4):
+includes a **Home Assistant integration layer** (see docs/spec.md §5.1–5.4):
 
-- `diag.py` — diagnostics telemetry (`…/diag/state`, retained) + HA diagnostic
-  entities (uptime, free heap, RP2040 die temp, board addresses, reconnects, dropped,
-  Ethernet, last input) + a "Last log" mirror. Queue-gated so it never delays an action.
-- **Discovery polish** — `origin`, `serial_number`, `hw_version`, `expire_after`.
-- **`event` entities** per input (`INPUT_DISCOVERY` = event/trigger/both).
-- **Two-way control** — `mqtt_client` now SUBSCRIBEs; `…/cmd/#` → Restart/Identify
-  `button`s and live-tune `number`/`select` (timings + log level), **persisted to
-  `site.json`** and applied cross-core.
+- `diag.py` — diagnostics telemetry (`…/diag/state`, retained) + a "Last log" mirror.
+  Queue-gated so it never delays an action. The OSELIA integration renders the HA
+  diagnostic entities (uptime, free heap, RP2040 die temp, board addresses, reconnects,
+  dropped, Ethernet, last input) from these topics.
+- **Input publishing** — each press to `…/board<b>/input<p>/action`; the integration
+  declares one `event` entity per input.
+- **Two-way control** — `mqtt_client` SUBSCRIBEs; `…/cmd/#` → Restart/Identify and
+  live-tune timings + log level, **persisted to `site.json`** and applied cross-core.
+- **No firmware-published HA discovery** — the legacy `HA_INTEGRATION="mqtt"` path and
+  all `publish_*_discovery` builders were removed; the OSELIA integration owns every entity.
 - **CH9120 IP read-back** (`0x61`) so DHCP units self-report their leased IP.
-- The `oselia` host tool flashes/provisions the unit (always OSELIA mode -- the firmware
-  skips MQTT discovery). It does **not** push HA assets: the OSELIA integration is installed
-  via HACS and the `/oselia-hearth` dashboard is rendered with `oselia dashboard render` for
-  manual upload (`provisioning/oselia_provision/dashboard.py`).
+- The `oselia` host tool flashes/provisions the unit. It does **not** push HA assets: the
+  OSELIA integration is installed via HACS and the `/oselia-hearth` dashboard is rendered
+  with `oselia dashboard render` for manual upload (`provisioning/oselia_provision/dashboard.py`).
 
 Keep the POC's proven MQTT wire format in `mqtt_packets` — it's the known-good
 reference. Any command/diagnostic publish must stay **behind the gesture-queue drain**
-(latency guarantee) and any new entity ships via MQTT discovery.
+(latency guarantee); the firmware publishes only data/command topics, never HA discovery.
 
 ## Coding conventions
 
