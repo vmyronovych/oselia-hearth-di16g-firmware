@@ -20,7 +20,7 @@ def _help(*args):
 
 def test_mqtt_subcommands_registered():
     top = _help("mqtt")
-    for cmd in ("watch", "pub", "cmd", "bounce"):
+    for cmd in ("watch", "pub", "cmd", "bounce", "clear-retained"):
         assert cmd in top, (cmd, top)
 
 

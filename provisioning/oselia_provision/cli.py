@@ -798,6 +798,33 @@ def mqtt_cmd(
     console.ok("sent %s/%s/cmd/%s" % (base_topic, device, name))
 
 
+@mqtt_app.command("clear-retained")
+def mqtt_clear_retained(
+    topics: List[str] = typer.Argument(..., help="Topic filter(s) to scrub, e.g. "
+                                       "'homeassistant/#' or 'homeassistant/+/893922/#'."),
+    broker: str = typer.Option(None, "--broker", metavar="IP[:PORT]"),
+    user: str = typer.Option(None, "--user"),
+    password: str = typer.Option(None, "--password"),
+    for_s: float = typer.Option(4.0, "--for", metavar="SECONDS",
+                                help="How long to collect the retained set first."),
+):
+    """Clear retained messages under a topic filter (publish empty retained to each). Use to
+    scrub stale HA discovery configs a prior firmware left behind so the §3 'no discovery'
+    check reads clean. Lists the set and confirms before clearing (bypass with --yes)."""
+    ip, port = _resolve_broker(broker)
+    victims = mqtt.clear_retained(ip, port, user, password, topics, collect_s=for_s,
+                                  dry_run=True)
+    if not victims:
+        console.ok("nothing retained under %s -- already clean." % ", ".join(topics))
+        return
+    console.info("%d retained topic(s) to clear under %s (e.g. %s)"
+                 % (len(victims), ", ".join(topics), victims[0]))
+    if not console.confirm("Clear all %d retained message(s)?" % len(victims), default=False):
+        console.die("Aborted; nothing cleared.")
+    cleared = mqtt.clear_retained(ip, port, user, password, topics, collect_s=for_s)
+    console.ok("cleared %d retained message(s)." % len(cleared))
+
+
 @mqtt_app.command("bounce")
 def mqtt_bounce(
     container: str = typer.Option("mosquitto", "--container",

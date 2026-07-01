@@ -128,6 +128,25 @@ def test_watch_collects_publishes_and_invokes_callback():
     assert b"\x82" in fake.sent and b"hearth/+/status" in fake.sent
 
 
+def test_clear_retained_dry_run_collects_retained_topics():
+    # CONNACK, then two retained config publishes -> dry_run returns them sorted, clears nothing.
+    pubs = (m.build_publish("homeassistant/button/893922/reboot/config", b"{...}")
+            + m.build_publish("homeassistant/event/893922/b1_in1/config", b"{...}"))
+    fake = _FakeSock(_CONNACK + pubs)
+    import socket
+    orig = socket.create_connection
+    socket.create_connection = lambda *a, **k: fake
+    try:
+        victims = m.clear_retained("1.2.3.4", 1883, None, None, ["homeassistant/#"],
+                                   collect_s=0.2, dry_run=True)
+    finally:
+        socket.create_connection = orig
+    assert victims == ["homeassistant/button/893922/reboot/config",
+                       "homeassistant/event/893922/b1_in1/config"], victims
+    # dry_run must NOT have published a clear (only the SUBSCRIBE from the collect watch).
+    assert b"\x82" in fake.sent            # a SUBSCRIBE went out (collection)
+
+
 def _run():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

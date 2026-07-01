@@ -269,6 +269,34 @@ def publish(ip, port, user, password, topic, payload=b"", retain=False):
         _disconnect(sock)
 
 
+def clear_retained(ip, port, user, password, topics, collect_s=4.0, dry_run=False):
+    """Collect topics under `topics` that currently carry a (retained) payload, then clear
+    each by publishing an empty retained message over one connection. Returns the sorted list
+    of topics cleared (or that WOULD be cleared, when dry_run). Used to scrub stale HA
+    discovery configs a prior firmware left retained (see the hw-test §3 check)."""
+    found = {}
+    watch(ip, port, user, password, topics, duration=collect_s,
+          on_message=lambda t, p, e: found.__setitem__(t, True) if p else None)
+    victims = sorted(found)
+    if dry_run or not victims:
+        return victims
+    try:
+        sock = socket.create_connection((ip, port), timeout=5.0)
+    except OSError:
+        return []
+    try:
+        sock.settimeout(5.0)
+        sock.sendall(build_connect("oselia-clear", user=user, password=password))
+        if _read_packet(sock) is None:
+            return []
+        for t in victims:
+            sock.sendall(build_publish(t, b"", retain=True))
+        time.sleep(0.4)
+        return victims
+    finally:
+        _disconnect(sock)
+
+
 def probe_broker(host):
     """(host, 1883) if it speaks MQTT (TCP open + a CONNACK to our CONNECT), else None."""
     try:
