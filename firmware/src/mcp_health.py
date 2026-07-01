@@ -13,7 +13,7 @@ What lives here:
   * `FaultRing` -- bounded ring of recent fault records (the diag `recent[]`),
   * `RecoveryPolicy` -- rate-limited L1(bus)->L2(reset) escalation decision,
   * `health_summary` -- the single `health` string for the diag blob / HA.
-See SPEC.md sec.12 (robustness) and the diag/state schema in INTEGRATION_SPEC.md.
+See docs/spec.md sec.12 (robustness) and the diag/state schema in INTEGRATION_SPEC.md.
 """
 
 # ---- stable error-code taxonomy (the diag `code` field) -------------------
@@ -166,7 +166,7 @@ class RecoveryPolicy:
     multi-board rig: L2 pulses the SHARED /RESET line, so a persistently-absent chip
     must not keep resetting the HEALTHY boards every interval -- the passive 2 s
     health-check still re-inits a returning chip regardless, so backing off loses
-    nothing. See SPEC.md sec.12 and input_task.
+    nothing. See docs/spec.md sec.12 and input_task.
     """
 
     def __init__(self, after_fails, min_interval_ms, max_interval_ms=None):

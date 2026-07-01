@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build an OTA bundle from a firmware src dir and stream it to a board over MQTT.
 
-Reference / test publisher for the on-device OTA receiver (OTA_SPEC.md): it mirrors
+Reference / test publisher for the on-device OTA receiver (../docs/ota.md): it mirrors
 exactly what the OSELIA HA integration's UpdateEntity will do. Builds a bundle with
 `ota.build_bundle` (the same code the device verifies against), publishes the command
 to `<base>/<id>/ota/cmd`, streams indexed chunks to `<base>/<id>/ota/data`, and tails

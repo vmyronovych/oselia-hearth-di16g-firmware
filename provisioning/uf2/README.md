@@ -15,7 +15,7 @@ The file **names must match** `MPY_UF2_NAME` / `FLASH_NUKE_NAME` in
 ## Refreshing / bumping the pin
 
 When the MicroPython pin changes, update `EXPECTED_MPY_VERSION`, `MPY_UF2_NAME`,
-`MPY_UF2_URL` in `oselia_provision/constants.py` **and** `firmware/FLASHING.md`, then
+`MPY_UF2_URL` in `oselia_provision/constants.py` **and** `firmware/docs/flashing.md`, then
 re-download here:
 
 ```bash

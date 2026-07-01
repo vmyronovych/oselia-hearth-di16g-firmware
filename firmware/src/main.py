@@ -6,7 +6,7 @@ the slot) and tiny.
 
 The loader is main.py, not boot.py, by design (see the PR that introduced it).
 
-Responsibilities (OTA_SPEC.md "Boot-confirm / auto-revert"):
+Responsibilities (docs/ota.md "Boot-confirm / auto-revert"):
   1. read /ota/state, run the boot-confirm gate (revert a build that never proved
      itself after _MAX_TRIES boots),
   2. put the chosen slot first on sys.path,

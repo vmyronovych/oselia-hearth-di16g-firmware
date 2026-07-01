@@ -2,9 +2,9 @@
 
 Status: **working — HW-verified end to end** (see Implementation status below). This
 is the design contract for remote application updates,
-alongside `SPEC.md` (firmware behaviour) and `../provisioning/PROVISIONING_SPEC.md`
-(installer experience). Where this and `SPEC.md` disagree on firmware behaviour,
-`SPEC.md` wins.
+alongside `spec.md` (firmware behaviour) and `../provisioning/PROVISIONING_SPEC.md`
+(installer experience). Where this and `spec.md` disagree on firmware behaviour,
+`spec.md` wins.
 
 **Implementation status (2026-06-25): WORKING + HW-VERIFIED end to end.**
 - `src/ota.py` core (boot-confirm/auto-revert state machine, bundle build/parse/verify,
@@ -39,7 +39,7 @@ USB cable for a code change does not scale. We want **remote, unattended firmwar
 updates** of the application code over the LAN, with safe rollback so a bad build
 or a power cut mid-update can never strand a unit.
 
-The board's constraints fully shape the design (see `SPEC.md §4`):
+The board's constraints fully shape the design (see `spec.md §4`):
 
 - **No socket / no DNS / no HTTP stack on the RP2040.** The only live external link
   is the CH9120 bridge, configured as a *single TCP client to the broker*. To fetch
@@ -50,10 +50,10 @@ The board's constraints fully shape the design (see `SPEC.md §4`):
   physical BOOTSEL UF2). Interpreter OTA is **out of scope** (would need a custom
   dual-bank bootloader; brick risk).
 - The MQTT client now **supports SUBSCRIBE + inbound-PUBLISH dispatch** (added for
-  two-way control — `SPEC.md §5.3`): it subscribes to `…/cmd/#` and routes commands
+  two-way control — `spec.md §5.3`): it subscribes to `…/cmd/#` and routes commands
   to a handler. An OTA *trigger* over MQTT can reuse this exact path (e.g. a
   `…/cmd/ota` command), so the receive-side prerequisite is already met.
-- Dual-core with a watchdog gated on core1's heartbeat (`SPEC.md §3a/§12`). The
+- Dual-core with a watchdog gated on core1's heartbeat (`spec.md §3a/§12`). The
   download is long and blocking → it runs on **core1 (`net_task`)**, chunked, with
   `_beat()` between chunks so the WDT stays fed.
 - A machine-owned `site.json` at root holds broker IP/credentials/identity
@@ -182,9 +182,8 @@ already tell `net_task` exactly when "online + healthy" holds.
   `http.server` bound to a numeric LAN IP, publish the command (via `mosquitto_pub`,
   already used in `tools/`, to avoid a new paho dependency), and tail `…/ota/state`
   (via `mosquitto_sub`) for progress/result.
-- `ota/OTA_SPEC.md`: the contract (topics, command JSON, bundle format, slot/rollback
-  semantics) — this document, moved/duplicated there if the host tooling lands in a
-  sibling dir.
+- `ota/README.md`: the contract (topics, command JSON, bundle format, slot/rollback
+  semantics) — a pointer to this document, if the host tooling lands in a sibling dir.
 
 ### 6. Config additions (`config.example.py` + `src/config.py`, with `site.json` overlay where per-site)
 - `OTA_ENABLE`, `OTA_CMD_TOPIC` / `OTA_STATE_TOPIC` (derived from `BASE_TOPIC`/id),

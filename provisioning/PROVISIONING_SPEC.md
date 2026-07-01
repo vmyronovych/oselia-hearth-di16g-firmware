@@ -2,8 +2,8 @@
 
 Status: **implemented** (the `oselia` tool, `provisioning/oselia_provision/`). This is the
 contract for how an installer brings a fresh Hearth online in a new house. It
-sits alongside `SPEC.md` (the firmware contract) and `BRINGUP.md` (the bench
-checklist). Where this document and `SPEC.md` disagree, `SPEC.md` wins for
+sits alongside `../firmware/docs/spec.md` (the firmware contract) and `../firmware/docs/bringup.md` (the bench
+checklist). Where this document and `../firmware/docs/spec.md` disagree, `../firmware/docs/spec.md` wins for
 firmware behaviour; this document owns the *installer experience*.
 
 **Implementation decisions (resolved from the open §4 / network questions):**
@@ -53,12 +53,12 @@ not).
 ## 2. Scope — what the installer actually has to supply
 
 The firmware already auto-registers every input in Home Assistant via MQTT
-discovery (`SPEC.md §5`). So the only genuinely site-specific data is a small
+discovery (`../firmware/docs/spec.md §5`). So the only genuinely site-specific data is a small
 kernel:
 
 | Item | Source | Notes |
 |------|--------|-------|
-| Broker IP (numeric) | mDNS: auto if one, choose if several, manual if none | CH9120 does **no DNS** — must end up numeric (`SPEC.md §4`) |
+| Broker IP (numeric) | mDNS: auto if one, choose if several, manual if none | CH9120 does **no DNS** — must end up numeric (`../firmware/docs/spec.md §4`) |
 | Broker port | default `1883`, override on prompt | |
 | MQTT username / password | prompt (optional) | many HA installs require auth |
 
@@ -104,7 +104,7 @@ Step by step:
    firmware fresh, so nothing is lost by the wipe.
 
 1a. **Check the MicroPython interpreter.** Read `os.uname().release` and compare to the
-   pinned `EXPECTED_MPY_VERSION` (`1.28.0`, kept in step with `firmware/FLASHING.md`).
+   pinned `EXPECTED_MPY_VERSION` (`1.28.0`, kept in step with `firmware/docs/flashing.md`).
    On a mismatch or no MicroPython, **inform the installer and offer to flash it
    automatically** (`ensure_micropython`): reboot into BOOTSEL (`machine.bootloader()`,
    or the BOOT+RESET dance on a bare board), copy the pinned UF2 to the RPI-RP2 drive,
@@ -193,7 +193,7 @@ rewritten reliably. `_restore_app` reinstates the loader afterwards (same `.prov
 If the unit can't be targeted unambiguously (zero/multiple online, or an auth broker — no
 creds are known pre-quiesce), the wizard falls back to the USB-driven `_disable_app`, which
 is reliable for a bare/idle board but fragile on a running watchdog unit. The cooperative
-path is what makes in-place re-provision (no BOOTSEL) reliable. See `firmware/SPEC.md` §5.3.
+path is what makes in-place re-provision (no BOOTSEL) reliable. See `firmware/docs/spec.md` §5.3.
 
 ---
 
@@ -218,7 +218,7 @@ out of source control.
 ### 4a. On-board layout: OTA A/B slots (not flat)
 
 So a freshly provisioned unit is **OTA-ready out of the box**, the wizard lays down the
-slot layout from `firmware/OTA_SPEC.md` rather than copying the app flat to root:
+slot layout from `firmware/docs/ota.md` rather than copying the app flat to root:
 
 ```
 /main.py            loader (installed LAST; never part of an OTA bundle)
@@ -232,13 +232,13 @@ slot layout from `firmware/OTA_SPEC.md` rather than copying the app flat to root
 a pre-OTA unit onto slots), then installs `/main.py` **last** — an interrupted copy
 leaves a bare REPL, not a boot loop. `_disable_app` parks the auto-run entry
 (`/main.py`, or a legacy `/boot.py`) before writing. After this,
-every firmware update goes over Ethernet from Home Assistant (`OTA_SPEC.md`,
+every firmware update goes over Ethernet from Home Assistant (`../firmware/docs/ota.md`,
 `../homeassistant/INTEGRATION_SPEC.md`) — USB is needed only for this
 first install.
 
 > The firmware also **writes** `site.json` itself when a live-tunable is changed
 > from HA (`long_ms` / `double_gap_ms` / `debounce_ms` / `log_level`; see
-> `SPEC.md §5.4`), merging the key via an atomic temp+rename. Re-running the wizard
+> `../firmware/docs/spec.md §5.4`), merging the key via an atomic temp+rename. Re-running the wizard
 > reads the existing `site.json` and only rewrites the keys it owns, so board-set
 > tunables are preserved unless explicitly overridden.
 
@@ -284,7 +284,7 @@ Kept out of the interactive flow so the common case stays ≤3 questions:
 - `--mpy-uf2 <path>` — flash this local UF2 instead of downloading (offline installs).
 - `--no-diag` — disable diagnostics telemetry on the unit; writes `"diag": false`
   to `site.json` so the firmware publishes no `…/diag/state` and registers no HA
-  diagnostic entities (`SPEC.md §5.2`). Default is on.
+  diagnostic entities (`../firmware/docs/spec.md §5.2`). Default is on.
 - `--no-flash` — write config only, assume the slot layout is already on the board.
 - `--dry-run` — show what would be written without touching the board.
 
@@ -307,7 +307,7 @@ Standalone subcommands (each runs, then exits):
   filesystem) via Raspberry Pi's `flash_nuke.uf2`, leaving a **bare-metal** RP2040 in
   BOOTSEL. Confirms first (irreversible; `--yes` skips the prompt); the UF2 comes from the
   bundled `uf2/` (offline), else cache, else download; `--erase-uf2 PATH` overrides.
-  Re-flash MicroPython (`oselia flash`, step 1a / `firmware/FLASHING.md`) to reuse the board.
+  Re-flash MicroPython (`oselia flash`, step 1a / `firmware/docs/flashing.md`) to reuse the board.
 
 Removing a unit from Home Assistant is an HA-side action (the OSELIA integration / its
 device page), not a provisioning step — the tool does not touch HA.
@@ -392,7 +392,7 @@ so this is effectively a no-op.)
 - The MicroPython interpreter need **not** be pre-flashed: the wizard checks the
   version and, on a mismatch / missing interpreter, offers to flash the pinned UF2
   automatically (§3 step 1a). The physical flash is still a BOOTSEL/UF2 operation —
-  the wizard just drives it — and is documented in `firmware/FLASHING.md`.
+  the wizard just drives it — and is documented in `firmware/docs/flashing.md`.
 - **No internet required.** Both UF2 images (the pinned MicroPython + `flash_nuke`)
   ship in `provisioning/uf2/`, and the tool prefers them over any download — so
   step 1a and `oselia erase` work fully offline (see `uf2/README.md`).
@@ -424,7 +424,7 @@ so this is effectively a no-op.)
 ## 10. Out of scope (tracked elsewhere)
 
 - The `…/last_input` "learn mode" firmware feature (§5) — firmware change,
-  specify with `SPEC.md`.
-- Flashing the MicroPython UF2 (`BRINGUP.md §2`).
+  specify with `../firmware/docs/spec.md`.
+- Flashing the MicroPython UF2 (`../firmware/docs/bringup.md §2`).
 - Any HA-side automation authoring beyond naming inputs.
 - Putting the repo under source control / CI (separate task).

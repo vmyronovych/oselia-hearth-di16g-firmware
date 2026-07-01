@@ -205,7 +205,7 @@ CONTROL_ENABLE = True
 DHCP_LEASE_SETTLE_MS = 4000
 
 # ---------------------------------------------------------------------------
-# OTA application updates (over MQTT, no CH9120 retarget) -- see OTA_SPEC.md
+# OTA application updates (over MQTT, no CH9120 retarget) -- see docs/ota.md
 # ---------------------------------------------------------------------------
 # Replaces the app .py files via an A/B slot layout with boot-confirm/auto-revert.
 # The interpreter itself is NOT updated over the air (physical BOOTSEL only). The

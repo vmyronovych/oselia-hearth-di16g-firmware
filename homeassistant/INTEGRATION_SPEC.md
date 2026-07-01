@@ -6,9 +6,9 @@ device (not under the generic "MQTT" integration) and hosts **OTA firmware updat
 via a native HA `update` entity. The integration itself now lives in its own public
 repo, **[vmyronovych/oselia-hearth-di16g-ha](https://github.com/vmyronovych/oselia-hearth-di16g-ha)**
 (HACS-installable); this doc is its design contract. Sits alongside `README.md` (the
-current MQTT-discovery assets), `../firmware/SPEC.md` (firmware behaviour) and
-`../firmware/OTA_SPEC.md` (the on-device slot/rollback core this reuses). Where
-this and `OTA_SPEC.md` disagree on **on-device** behaviour, `OTA_SPEC.md` wins; this
+current MQTT-discovery assets), `../firmware/docs/spec.md` (firmware behaviour) and
+`../firmware/docs/ota.md` (the on-device slot/rollback core this reuses). Where
+this and `../firmware/docs/ota.md` disagree on **on-device** behaviour, `../firmware/docs/ota.md` wins; this
 doc owns the **HA-side** contract.
 
 ## Why this exists
@@ -42,7 +42,7 @@ doc owns the **HA-side** contract.
 - **Distribution: HACS** (custom repository) **+ a `home-assistant/brands` PR** for the
   logo/icon. HA-core inclusion is a possible later step, not a v1 goal.
 - **OTA transport** stays the lower-risk **MQTT-chunked** path (no CH9120 retarget),
-  reusing the **slot/boot-confirm/auto-revert core** from `OTA_SPEC.md` verbatim. The
+  reusing the **slot/boot-confirm/auto-revert core** from `../firmware/docs/ota.md` verbatim. The
   integration adds the HA-side trigger, progress, and (optionally) byte hosting.
 
 ---
@@ -95,70 +95,32 @@ the integration creates exactly the live inputs.
 
 ## Protocol contract (firmware ↔ integration)
 
-All under `BASE_TOPIC=hearth`, `base = hearth/<device_id>`.
+> **The wire contract is owned by the firmware.** Every topic, payload, discovery
+> config, the full `diag/state` schema, and the error-code taxonomy live in
+> [`../firmware/docs/mqtt-contract.md`](../firmware/docs/mqtt-contract.md) — the firmware
+> is the emitter, so it is the source of truth. **This section owns only the HA-entity
+> mapping** (which entity the integration builds from each topic); read the contract for
+> the on-the-wire shapes.
 
-> **Firmware ≥ 0.7.0** extends `diag/state` with structured per-MCP root-cause data
-> and adds the `…/diag/event` fault stream (see schema below). All new fields are
-> additive — older integration builds that read only the original keys keep working.
+| Topic | HA entity the integration builds |
+|---|---|
+| `…/status` | availability for all entities |
+| `…/board<b>/input<p>/action` | `event` per input (≤128; count = `diag/state.boards` × 16) |
+| `…/cfg` | state for the `number`s + `select` |
+| `…/diag/state` | Diagnostics sensor + per-board MCP entities (from `mcp[]`) + counters |
+| `…/diag/event` | fault `event` entity (HA logbook timeline) |
+| `…/diag/log` | "Last log" diagnostic sensor |
+| `…/cmd/reboot` `…/cmd/identify` | `button` (restart / identify) |
+| `…/cmd/long_ms` `…/cmd/double_gap_ms` `…/cmd/debounce_ms` | `number` (config) |
+| `…/cmd/log_level` | `select` (config) |
+| `…/ota/cmd` `…/ota/state` | `update` entity (drives the command, reflects progress) |
 
-| Topic | Dir | Retain | Payload | HA entity (owned by `oselia`) |
-|---|---|---|---|---|
-| `…/status` | dev→HA | yes | `online`/`offline` | availability for all entities |
-| `…/board<b>/input<p>/action` | dev→HA | no | `single`/`double`/`long` | `event` per input (≤128) |
-| `…/cfg` | dev→HA | yes | `{long_ms,double_gap_ms,debounce_ms,log_level}` | state for the numbers + select |
-| `…/diag/state` | dev→HA | yes | structured blob (below) | Diagnostics sensor + per-board MCP entities + counters + diagnostic sensors |
-| `…/diag/event` | dev→HA | **no** | one fault record (below) | fault `event` entity (HA logbook timeline) |
-| `…/cmd/reboot` `…/cmd/identify` | HA→dev | no | `PRESS` | `button` (restart / identify) |
-| `…/cmd/long_ms` `…/cmd/double_gap_ms` `…/cmd/debounce_ms` | HA→dev | no | int (ms) | `number` (config) |
-| `…/cmd/log_level` | HA→dev | no | `ERROR`/`WARN`/`INFO`/`DEBUG` | `select` (config) |
-| `…/ota/cmd` | HA→dev | no | OTA command JSON (below) | (driven by the `update` entity) |
-| `…/ota/state` | dev→HA | yes | `{stage,percent,running_version,target_version,error}` | `update` entity progress/state |
-
-### `diag/state` schema (retained — the canonical, exportable root-cause artifact)
-
-```jsonc
-{
-  "fw": "0.7.0", "hw": "DI16-G", "uptime_s": 5400, "ip": "192.168.1.200",
-  "reset_cause": "wdt",            // rp2: power_on | wdt | unknown ("wdt" also = any machine.reset())
-  "health": "mcp_fault",           // ok | degraded | mcp_fault | net_fault
-  "eth": true, "mqtt": true,
-  "boards": 5,                     // resolved board count (= boards_total; input entities for all)
-  "boards_total": 5, "boards_ok": 4,
-  "board_addrs": ["0x20", "0x21", "..."],
-  "mcp": [                         // one entry per board, in board order
-    {"board": 1, "addr": "0x20", "ok": true,  "code": "",        "detail": "",
-     "fails": 0,  "last_ok_s": 1,   "recoveries": 0},
-    {"board": 2, "addr": "0x21", "ok": false, "code": "i2c_eio", "detail": "OSError 5 read",
-     "fails": 12, "last_ok_s": 480, "recoveries": 3}
-  ],
-  "counters": {"bus_recoveries": 4, "mcp_resets": 2,
-               "reconnects": 1, "dropped": 0},
-  "last_fault": {"ts": 5212, "component": "mcp", "code": "i2c_eio",
-                 "detail": "OSError 5 read", "board": 2},
-  "recent": [ /* up to DIAG_FAULT_RING fault records, newest last (the timeline) */ ],
-  "mem_free": 41200, "temp_c": 44.1,
-  // back-compat fields retained: reconnects, dropped, last
-  "reconnects": 1, "dropped": 0, "last": "b1/in3 single"
-}
-```
-
-`diag/event` payload is a single fault record: `{ts, component, code, detail[, board]}`
-(published the instant a fault transitions, so HA's logbook shows a real-time timeline
-rather than only the latest retained snapshot).
-
-**Stable error-code taxonomy** (`code` / fault `code`; greppable to firmware
-`src/mcp_health.py`): `i2c_eio`, `i2c_timeout`, `mcp_absent`, `mcp_init_fail`,
-`bus_recovered`, `mcp_reset`, `eth_link_lost`, `mqtt_disconnect`,
-`mqtt_connack_refused`, `ota_*`. The raw errno/exception text rides in `detail`.
-(Input is pure-polling; there is no INT, so no `int_stuck`.)
-
-Input count still comes from `diag/state.boards` (×16). The integration should create
-input entities for all `boards`, and surface per-board health from `mcp[]` (so a single
-down board never hides the others' inputs).
-
-Device identity for `device_info`: `manufacturer=OSELIA`, `model="Hearth (DI16-G)"`,
-`hw_version`, `serial_number=<device_id>`, `sw_version` from `diag/state.fw`,
-`configuration_url` → the gateway IP from `diag/state.ip`.
+Integration-specific consumption rules: create input entities for **all** `boards` and
+surface per-board health from `mcp[]`, so a single down board never hides the others'
+inputs. `device_info`: `manufacturer=OSELIA`, `model="Hearth (DI16-G)"`, `hw_version`,
+`serial_number=<device_id>`, `sw_version` from `diag/state.fw`, `configuration_url` → the
+gateway IP from `diag/state.ip`. (fw ≥ 0.7.0 `diag/state` fields are additive — older
+integration builds that read only the original keys keep working.)
 
 ---
 
@@ -187,7 +149,7 @@ self-abort a stalled download (today a dead publisher leaves it NAKing until a r
 
 ## OTA over the integration (original design notes)
 
-Reuses `OTA_SPEC.md`'s on-device core unchanged: `/main.py` loader, `/slots/{a,b}`,
+Reuses `../firmware/docs/ota.md`'s on-device core unchanged: `/main.py` loader, `/slots/{a,b}`,
 `/ota/active`, the `pending`/`tries` boot-confirm + auto-revert, `site.json` never
 touched. The integration replaces the ad-hoc host tooling (`ota_publish.py`) with the
 HA-native flow:
@@ -207,7 +169,7 @@ HA-native flow:
 3. **Progress / result.** The device publishes `…/ota/state` retained
    (`downloading → applying → idle`, with `percent`); the entity maps `stage`→
    `in_progress`, `percent`→`update_percentage`, and clears when `fw` reaches target.
-   Bad build → on-device auto-revert (per `OTA_SPEC.md`); the entity simply reflects
+   Bad build → on-device auto-revert (per `../firmware/docs/ota.md`); the entity simply reflects
    `fw` snapping back and surfaces `error`.
 
 Versioning/compat: the integration declares a min/max supported firmware protocol
@@ -278,7 +240,7 @@ This integration **supersedes** firmware-published discovery:
 - **Done:** `HA_INTEGRATION` flag (`config.py` + `site.json` overlay) gates discovery
   publishing; `net_task` skips `publish_*_discovery` in `"oselia"` mode while keeping
   the command subscribe + `…/cfg` seed. Provisioning sets it via `--oselia`.
-- Add OTA on-device pieces per `OTA_SPEC.md` (loader, slots, `ota.py`, `…/ota/*`).
+- Add OTA on-device pieces per `../firmware/docs/ota.md` (loader, slots, `ota.py`, `…/ota/*`).
 - Add a protocol-version field to `diag/state`.
 
 ## Verification
@@ -291,7 +253,7 @@ This integration **supersedes** firmware-published discovery:
 - **On hardware** (HW-VERIFY): real gateway appears under OSELIA (not MQTT) with logo;
   inputs fire events; controls write back; trigger an OTA from the update card and watch
   `…/ota/state` go downloading→applying→idle and `fw` advance; rollback drills per
-  `OTA_SPEC.md`.
+  `../firmware/docs/ota.md`.
 
 ## Open decisions
 
@@ -299,7 +261,7 @@ This integration **supersedes** firmware-published discovery:
   `hearth` (current product, matches `BASE_TOPIC`/README everywhere). Recommend
   `oselia` with Hearth as the device model. Affects the brands PR and entity_id prefix.
 - **B. Bundle delivery for OTA**: HA HTTP-view host (HTTP-pull, needs CH9120 retarget on
-  device) vs MQTT-chunk (no retarget). Recommend MQTT-chunk for v1 per `OTA_SPEC.md`
+  device) vs MQTT-chunk (no retarget). Recommend MQTT-chunk for v1 per `../firmware/docs/ota.md`
   risk analysis; revisit if throughput is inadequate.
 - **C. Release feed**: GitHub Releases vs a self-hosted JSON manifest. Recommend GitHub
   Releases (free hosting, signed tags, release notes for `RELEASE_NOTES`).

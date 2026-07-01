@@ -67,8 +67,8 @@ config, then re-open at `baudrate=115200` for transparent mode.
 > The breadboard POC used I2C0 (GP0/GP1), INT GP2, and tied RESET high. The
 > manufactured PCB (`hardware/dib-monolith`) re-routes these — values above are read
 > from the PCB netlist and cross-checked against the RP2040-ETH pinout. GP26/GP27 are
-> the RP2040's native I2C1 SDA/SCL pair. See `POC_NOTES.md` for the POC→board delta and
-> `PINOUT.md` for a visual map of these pins on the RP2040-ETH module.
+> the RP2040's native I2C1 SDA/SCL pair. See `hardware.md` for the POC→board delta and
+> `hardware.md` for a visual map of these pins on the RP2040-ETH module.
 
 Addresses: the full A0–A2 strap range `0x20..0x27` (1–8 chips). The firmware
 auto-discovers which respond at boot (`MCP_AUTODISCOVER`); `MCP_ADDRESSES` is the
@@ -167,67 +167,25 @@ Implications baked into the design:
 
 ## 5. MQTT contract
 
-All topics derive from a configurable base. Defaults:
+> **The canonical wire contract — every topic, payload, discovery config, and the
+> `diag/state` schema — lives in [`mqtt-contract.md`](mqtt-contract.md).** This section
+> covers *how the firmware builds and gates* those messages; for the on-the-wire tables,
+> read the contract.
 
-| Purpose            | Topic                                             | Payload / Retain |
-|--------------------|---------------------------------------------------|------------------|
-| Availability (LWT) | `hearth/<device_id>/status`                    | `online` / `offline`, **retained** |
-| Input action       | `hearth/<device_id>/board<b>/input<p>/action`  | `single` / `double` / `long`, not retained |
-| Discovery (trigger)| `homeassistant/device_automation/<device_id>/b<b>_in<p>_<gesture>/config` | JSON, **retained** |
+Topics derive from a configurable base (`BASE_TOPIC`/`DISCOVERY_PREFIX` in `config.py`);
+`base = hearth/<device_id>`, `<b>` = board `1..8`, `<p>` = pin `1..16`. All inputs belong
+to **one** HA device. LWT (`…/status` → `offline`) is registered in CONNECT.
 
-- `<device_id>` = stable id derived from the RP2040 unique ID (e.g. last 6 hex).
-- `<b>` = board `1..8` (chip position in `MCP_ADDRESSES`); `<p>` = pin `1..16`.
-- All inputs belong to **one** HA device; the board/pin shows up in the trigger
-  `subtype` (`board<b>_input<p>`, overridable via `INPUT_NAME_OVERRIDES`).
-- LWT registered in CONNECT so HA marks the device unavailable on disconnect.
-
-### 5.1 Discovery payload (device_automation trigger)
+### 5.1 Discovery (triggers + `event` entities)
 
 One config message per **(board × pin × gesture)** = `n_boards × 16 × 3` (up to
-**8 × 16 × 3 = 384** at the 8-board max; e.g. 48 for a single advertised board),
-published with a small inter-message settle so the CH9120 keeps up. Only
-*advertised* boards count — with `MCP_AUTODISCOVER` that's the chips that actually
-responded. Example for board 2, pin 5, single press:
-
-```json
-{
-  "automation_type": "trigger",
-  "type": "button_short_press",
-  "subtype": "board2_input5",
-  "topic": "hearth/AABBCC/board2/input5/action",
-  "payload": "single",
-  "device": {
-    "identifiers": ["hearth_AABBCC"],
-    "name": "Hearth",
-    "model": "Hearth (DI16-G)",
-    "manufacturer": "DIY",
-    "sw_version": "0.1.0"
-  }
-}
-```
-
-Gesture → HA trigger `type` mapping:
-
-| Gesture | `type`               | `payload` |
-|---------|----------------------|-----------|
-| single  | `button_short_press` | `single`  |
-| double  | `button_double_press`| `double`  |
-| long    | `button_long_press`  | `long`    |
-
-`subtype` = `board<b>_input<p>` (or override). All discovery configs are **retained**
-so HA repopulates them after a restart.
-
-### 5.1a Input `event` entities (`INPUT_DISCOVERY`)
-
-In addition to (or instead of) the device-automation triggers, each input can be
-published as a modern HA **`event` entity** (`homeassistant/event/<id>/b<b>_in<p>/config`,
-`device_class: button`, `event_types: [single, double, long]`). It reuses the existing
-(non-retained) action topic; a `value_template` wraps the plain payload into the
-`{"event_type": …}` JSON HA expects. Event entities show in dashboards/logbook and are
-what the shipped blueprint (`homeassistant/blueprints/.../dib_switch.yaml`) targets.
-`INPUT_DISCOVERY` = `"event"` / `"trigger"` / `"both"` (default `both`; `both` doubles
-the per-connect discovery burst). HA-verified: entities register and fire with the
-correct `event_type`.
+**8 × 16 × 3 = 384**; 48 for one board), published with a small inter-message settle so
+the CH9120 keeps up, and **retained** so HA repopulates after a restart. Only *advertised*
+boards count (with `MCP_AUTODISCOVER`, the chips that responded). Each input publishes a
+device-automation **trigger** and/or a modern **`event` entity** — `INPUT_DISCOVERY` =
+`event`/`trigger`/`both` (default `both`). Payload shapes, the gesture→`type` mapping, and
+the `event`-entity `value_template` are in [`mqtt-contract.md`](mqtt-contract.md#discovery).
+HA-verified: entities register and fire with the correct `event_type`.
 
 ### 5.2 Diagnostics telemetry (optional, `DIAG_ENABLE`)
 
@@ -406,7 +364,10 @@ hardware.
 
 ```
 dib-gateway-fw/
-├── SPEC.md / CLAUDE.md / README.md / POC_NOTES.md
+├── README.md / CLAUDE.md    # front door + agent working agreement (stay at root)
+├── docs/                    # spec.md, hardware.md, mqtt-contract.md, ota.md,
+│                            #   flashing.md, bringup.md, releasing.md, upgrading.md,
+│                            #   + pinout image
 ├── config.example.py        # copy to config.py and edit
 ├── src/
 │   ├── main.py              # orchestrator: spawn core1, run core0, validate config
@@ -431,7 +392,7 @@ dib-gateway-fw/
 │   ├── clock.py             # wrap-safe monotonic ms (pure, tested)
 │   └── log.py               # leveled, rate-limited logger (serial + optional HA sink)
 ├── tests/                   # host-runnable (CPython): detector, led, queue, clock, mqtt, diag
-└── tools/flash_notes.md
+└── tools/                   # on-hardware flash/test/debug helpers (tools/README.md)
 ```
 
 The OSELIA custom integration lives in its own repo
@@ -502,7 +463,7 @@ Pure modules (no `machine`/`network` imports): `press_detector`, `debounce`,
 
 ## 11. Open items to confirm on real hardware
 
-Resolved by the POC (see `POC_NOTES.md`): CH9120 tx/rx pins + config baud, MCP
+Resolved by the POC (see `hardware.md`): CH9120 tx/rx pins + config baud, MCP
 register init, active-low polarity, static IP (no DNS), and working long/double
 timings (400/300 ms).
 
@@ -510,7 +471,7 @@ Confirmed on the **manufactured board** (this hardware, 2026-06): MCP23017 detec
 the re-routed bus (**I2C1 GP26/27**, INT **GP22**, `/RESET` **GP9**); MQTT online +
 retained discovery configs publishing; status LED working — WS2812 on **GP25**, **RGB**
 wire order (GRB shows green-as-red here), driven via PIO. Interpreter pinned to
-MicroPython **1.28.0** (`FLASHING.md`).
+MicroPython **1.28.0** (`flashing.md`).
 
 Still to confirm:
 

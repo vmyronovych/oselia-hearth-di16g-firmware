@@ -46,7 +46,7 @@ class SharedState:
         # Live-tunable gesture timings: core1 writes (on an HA command) and bumps
         # tune_version; core0 reads tune_version each pass (plain int -> atomic) and
         # only takes the lock to re-read the set when it changed. See net_task /
-        # input_task and SPEC.md sec.5.4.
+        # input_task and docs/spec.md sec.5.4.
         self.tune_version = 0
         self.tune_long_ms = 0
         self.tune_double_gap_ms = 0

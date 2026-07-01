@@ -6,7 +6,7 @@ a millisecond integer, so tests can use a fake clock.
 
 Gestures emitted (strings): "single", "double", "long".
 
-Behaviour (see SPEC.md sec.6):
+Behaviour (see docs/spec.md sec.6):
   * A press held >= long_ms emits "long" once, on crossing the threshold; the
     following release is swallowed (no "single").
   * On release of a short press, a window of double_gap_ms opens. If a new press

@@ -10,7 +10,7 @@ service.
 Sending is OFF-able per install (`cfg.DIAG_ENABLE`, set by the provisioning wizard)
 and -- crucially -- is gated in net_task so it never delays a button publish: the
 caller only emits state when the gesture queue is empty and at most every
-`DIAG_INTERVAL_S` (see SPEC.md sec.5.2 and net_task).
+`DIAG_INTERVAL_S` (see docs/spec.md sec.5.2 and net_task).
 
 Builders here are pure (json/string only) so they run under CPython for host tests.
 """
