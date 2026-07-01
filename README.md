@@ -29,7 +29,7 @@ build, flash, provision, and update a unit.
 
 | Path | What's inside |
 |------|---------------|
-| [`firmware/`](firmware/) | MicroPython firmware (RP2040-ETH): inputs → press detection → MQTT, device diagnostics, two-way control, and OTA. See its [README](firmware/README.md) and [SPEC](firmware/SPEC.md). |
+| [`firmware/`](firmware/) | MicroPython firmware (RP2040-ETH): inputs → press detection → MQTT, device diagnostics, two-way control, and OTA. See its [README](firmware/README.md) and [SPEC](firmware/docs/spec.md). |
 | [`provisioning/`](provisioning/) | The **`oselia`** host tool (Typer CLI): flash MicroPython, provision a unit onto the broker, a full board toolbox (use instead of raw `mpremote`), network discovery, and a Home Assistant dashboard YAML renderer — see its [README](provisioning/README.md). |
 | [`homeassistant/`](homeassistant/) | HA assets the installer pushes: the `/oselia-hearth` dashboard generator + the switch blueprint, plus the integration [design contract](homeassistant/INTEGRATION_SPEC.md). |
 
@@ -37,15 +37,15 @@ build, flash, provision, and update a unit.
 
 - **Install a gateway** → [`provisioning/README.md`](provisioning/README.md)
 - **Hack on the firmware** → [`firmware/README.md`](firmware/README.md)
-- **Understand the design** → [`firmware/SPEC.md`](firmware/SPEC.md)
-- **Cut a firmware release** → [`firmware/RELEASING.md`](firmware/RELEASING.md)
+- **Understand the design** → [`firmware/docs/spec.md`](firmware/docs/spec.md)
+- **Cut a firmware release** → [`firmware/docs/releasing.md`](firmware/docs/releasing.md)
 
 ## OTA / release feed
 
 Firmware releases are published here as `fw-v*` GitHub Releases; the HA integration's
 release feed points at this repo's
 [`releases/latest`](https://github.com/vmyronovych/oselia-hearth-di16g-firmware/releases/latest).
-See [`firmware/RELEASING.md`](firmware/RELEASING.md) and [`firmware/OTA_SPEC.md`](firmware/OTA_SPEC.md).
+See [`firmware/docs/releasing.md`](firmware/docs/releasing.md) and [`firmware/docs/ota.md`](firmware/docs/ota.md).
 
 ## License
 

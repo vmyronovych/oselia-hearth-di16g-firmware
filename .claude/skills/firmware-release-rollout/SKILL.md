@@ -15,8 +15,8 @@ description: >-
 
 Firmware ships **over Ethernet via the OSELIA Home Assistant integration**, not USB. HA
 polls the GitHub release feed, shows "Firmware update available", and on **Install** streams
-the OTA bundle to the gateway over the local MQTT broker (`firmware/OTA_SPEC.md`,
-`firmware/RELEASING.md`). An A/B slot layout with a boot-confirm gate means a bad build
+the OTA bundle to the gateway over the local MQTT broker (`firmware/docs/ota.md`,
+`firmware/docs/releasing.md`). An A/B slot layout with a boot-confirm gate means a bad build
 **auto-reverts** — an update can never strand a unit.
 
 **Lead with the consumer, then go technical.** Every PR body and release note must be
@@ -89,5 +89,5 @@ When the diff (PR) or the release contents (since the previous tag) ship new fir
 ## Keep it consistent
 
 `rollout-snippet.md` is the single source of the user-facing wording — edit it there, not
-inline, so PR bodies and release notes never drift. This mirrors `firmware/RELEASING.md`
+inline, so PR bodies and release notes never drift. This mirrors `firmware/docs/releasing.md`
 (release-engineer-facing) and `firmware/UPGRADING.md` (end-user-facing).

@@ -6,18 +6,18 @@ MicroPython firmware for a Waveshare **RP2040-ETH** board that reads 16 isolated
 as `event` entities and/or `device_automation` triggers. It also publishes **device
 diagnostics** (uptime, free heap, die temperature, link/board health, last log) and
 accepts **two-way control** (Restart / Identify buttons, live-tunable gesture timings
-and log level). See `SPEC.md §5`.
+and log level). See `docs/spec.md §5`.
 
 > **Networking note:** the RP2040-ETH uses a **CH9120 UART-to-Ethernet bridge**
 > (not a W5500). The RP2040 has no socket API — the CH9120 holds the TCP/IP stack.
-> See `SPEC.md` §4. Use a **numeric broker IP** (no DNS).
+> See `docs/spec.md` §4. Use a **numeric broker IP** (no DNS).
 
 ## Layout
 
-- `SPEC.md` — the full specification / contract (read this first).
+- `docs/spec.md` — the full specification / contract (read this first).
 - `CLAUDE.md` — working agreement for implementing the firmware.
 - `config.example.py` — copy to `config.py` and edit pins / broker / timings / names.
-- `src/` — firmware modules (see `SPEC.md` §8).
+- `src/` — firmware modules (see `docs/spec.md` §8).
 - `../provisioning/` — the host-side **`oselia`** tool (USB): flashes MicroPython,
   provisions a fresh unit, the board toolbox, and the dashboard YAML renderer. See its
   `README.md` and `PROVISIONING_SPEC.md`.
@@ -25,11 +25,15 @@ and log level). See `SPEC.md §5`.
   clock, MQTT packets/discovery, and diagnostics builders.
 - `../homeassistant/` — HA assets: the OSELIA integration design contract and the
   `/oselia-hearth` dashboard example (render your own with `oselia dashboard render`).
-- `BRINGUP.md` — bench bring-up checklist (the physical/HA steps scripts can't do).
-- `FLASHING.md` — which MicroPython UF2 to flash on a new RP2040-ETH, and how.
-- `POC_NOTES.md` — POC-confirmed hardware facts + the manufactured-board pin/LED delta.
-- `PINOUT.md` — RP2040-ETH pinout annotated with this board's pin usage (+ reference image).
-- `tools/` — on-hardware flash/test/debug scripts (`tools/README.md`) + `flash_notes.md`.
+- `docs/hardware.md` — pin map (annotated RP2040-ETH pinout + reference image), powering
+  rules, and the POC-confirmed CH9120 / MCP23017 / press-detection facts.
+- `docs/mqtt-contract.md` — the canonical wire contract (topics, discovery, `diag/state`).
+- `docs/ota.md` — OTA mechanism (A/B slots, boot-confirm, auto-revert).
+- `docs/flashing.md` — which MicroPython UF2 to flash on a new RP2040-ETH, and how.
+- `docs/bringup.md` — bench bring-up checklist (the physical/HA steps scripts can't do).
+- `docs/releasing.md` — cut a firmware release (GitHub → HA OTA feed).
+- `UPGRADING.md` — end-user upgrade guide (bilingual; linked from every release).
+- `tools/` — on-hardware flash/test/debug scripts (`tools/README.md`).
 - `.claude/skills/hw-test/` — project skill that orchestrates those scripts (see below).
 - `.claude/agents/hw-runner.md` — cheap (Sonnet) runner subagent for the green path (see below).
 
@@ -43,7 +47,7 @@ cp config.example.py config.py        # then edit broker IP, pins, timings
 python3 -m py_compile src/*.py        # syntax check
 python3 tests/test_press_detector.py  # logic tests
 
-# 3. deploy to the board (MicroPython already flashed — see FLASHING.md) — copy to root
+# 3. deploy to the board (MicroPython already flashed — see docs/flashing.md) — copy to root
 mpremote connect /dev/ttyACM0 fs cp config.py :
 mpremote connect /dev/ttyACM0 fs cp src/*.py :
 mpremote connect /dev/ttyACM0 reset      # runs main.py
@@ -77,7 +81,7 @@ tools/serial.sh 25              # capture a fresh boot's serial logs
 
 Defaults (auto-detected board port, broker, container) live in `tools/_common.sh`
 and are env-overridable: `PORT= BROKER= BROKER_PORT= MOSQ_CONTAINER= WATCH=`. See
-`tools/README.md` for details and `BRINGUP.md` for the full checklist.
+`tools/README.md` for details and `docs/bringup.md` for the full checklist.
 
 ### The `hw-test` skill
 
@@ -124,7 +128,7 @@ fixed wall-clock either way.)
    person (or machine) gets the same flow.
 
 For a fully manual run, skip Claude entirely and use the `tools/*.sh` commands
-above; for an interactive bring-up of a fresh board, follow `BRINGUP.md`.
+above; for an interactive bring-up of a fresh board, follow `docs/bringup.md`.
 
 > **First-use note:** the `hw-test` skill and the `hw-runner` agent are discovered
 > at **session start**. After first cloning the repo (or right after adding them),
@@ -138,19 +142,15 @@ above; for an interactive bring-up of a fresh board, follow `BRINGUP.md`.
 (default `hearth`) and `DISCOVERY_PREFIX` (default `homeassistant`). Boards are
 `board1`…`boardN`, inputs `input1`…`input16`, gestures `single` / `double` / `long`.
 
+The most common few (full table, payloads, discovery configs, and the `diag/state`
+schema are in **[`docs/mqtt-contract.md`](docs/mqtt-contract.md)** — the canonical wire
+contract):
+
 | Purpose | Topic | Payload | Retained |
 |---|---|---|---|
 | Button press (action) | `hearth/<id>/board<B>/input<N>/action` | `single` \| `double` \| `long` | no |
 | Availability (LWT) | `hearth/<id>/status` | `online` \| `offline` | yes |
-| Diagnostics snapshot | `hearth/<id>/diag/state` | JSON (uptime, ip, temp, boards, …) | yes |
-| Last log line | `hearth/<id>/diag/log` | JSON (`line`, `level`, `ts`) | yes |
-| Live-tunable values | `hearth/<id>/cfg` | JSON (long/double/debounce ms, log level) | yes |
-| Commands (HA → board) | `hearth/<id>/cmd/<name>` | per command (`reboot`/`identify`/`long_ms`/…) | no |
 | HA discovery | `homeassistant/<component>/<id>/…/config` | discovery JSON | yes |
-
-`<component>` covers `device_automation` (triggers), `event` (per-input, modern;
-`INPUT_DISCOVERY`), `sensor`/`binary_sensor` (diagnostics + Last log), `button`
-(Restart/Identify), `number` (timings), `select` (log level).
 
 Examples: `hearth/893922/board1/input2/action` → `single`;
 `homeassistant/event/893922/b1_in2/config`.
@@ -163,7 +163,8 @@ To inspect on the broker (MQTTX or `mosquitto_sub -h <broker> -v`):
 ## Status LED
 
 The board has **one** RGB LED (WS2812). It encodes health as **colour + blink
-rate**, showing the single highest-priority issue (root-cause first):
+rate**, showing the single highest-priority issue (root-cause first) — quick reference
+here; canonical logic in [`docs/spec.md §7a`](docs/spec.md):
 
 | LED | Pattern | Meaning | Priority |
 |---|---|---|---|
@@ -181,7 +182,7 @@ How to read it:
   then returns to green.
 - **Stuck on yellow and never reaching green?** Every chip listed in `MCP_ADDRESSES`
   is treated as required — a declared-but-unwired MCP keeps the MCP fault on. List
-  only the boards you've actually wired (see `BRINGUP.md` §8).
+  only the boards you've actually wired (see `docs/bringup.md` §8).
 - **Colours look swapped?** `config.py` sets `PIN_STATUS_LED=25`,
   `STATUS_LED_BRIGHTNESS=0.2`, `STATUS_LED_ORDER="RGB"` (HW-confirmed on this board —
   a standard GRB driver renders green as red here). If red/green appear swapped on a
@@ -190,7 +191,7 @@ How to read it:
 
 ## Architecture
 
-Dual-core (see `SPEC.md` §3a). **Core 0** runs the real-time input task
+Dual-core (see `docs/spec.md` §3a). **Core 0** runs the real-time input task
 (MCP23017 IRQ → debounce → single/double/long detection → event queue), owns the
 watchdog, and live-applies tunable timings. **Core 1** runs networking (CH9120 link,
 MQTT with LWT/keepalive, HA discovery, status LED), drains the queue, and handles
@@ -198,13 +199,13 @@ diagnostics, the log mirror, and inbound commands — all **after** the queue dr
 control/telemetry never delay a press. They share only a thread-safe queue and a
 lock-guarded health/heartbeat/tunables struct. Industrial robustness throughout:
 watchdog with cross-core heartbeat gating, reconnect with backoff, I²C retries,
-bounded queue, wrap-safe timing — see `SPEC.md` §12.
+bounded queue, wrap-safe timing — see `docs/spec.md` §12.
 
 ## Status
 
 **Implementation complete and host-tested**, with the full HA-integration layer
 (diagnostics, `event` entities, two-way control, live tuning, provisioning auto-setup)
-**verified on hardware against a local HA 2025.11** (`SPEC.md §5.1a–5.4`). Hardware
-facts are confirmed from a working POC (`POC_NOTES.md`). Host tests cover the detector,
+**verified on hardware against a local HA 2025.11** (`docs/spec.md §5.1a–5.4`). Hardware
+facts are confirmed from a working POC (`docs/hardware.md`). Host tests cover the detector,
 debounce, status LED, event queue, monotonic clock, MQTT packet framing, and the
 diagnostics/discovery builders.

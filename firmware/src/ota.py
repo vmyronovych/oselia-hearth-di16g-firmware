@@ -1,6 +1,6 @@
 """OTA application updates -- pure core + on-device install/state helpers.
 
-See OTA_SPEC.md for the contract. Scope: replace the **app .py files** (not the
+See docs/ota.md for the contract. Scope: replace the **app .py files** (not the
 MicroPython interpreter) via an A/B slot layout with a boot-confirm / auto-revert
 safety gate. Transport is MQTT-chunked (no CH9120 retarget) -- the receiver lives in
 net_task and feeds bytes here; see Phase 2.
@@ -10,7 +10,7 @@ This module is split so the decision logic and bundle (de)serialisation are **pu
 I/O uses only stdlib `os`/`json` so it is host-testable too. Only `reset()` touches
 `machine`, imported lazily.
 
-Layout (OTA_SPEC.md "On-device slot layout"):
+Layout (docs/ota.md "On-device slot layout"):
     /main.py            loader (installed once; never in a bundle)
     /site.json          machine-owned; never touched by OTA
     /slots/a , /slots/b one full copy of the app each (entry: app.py)

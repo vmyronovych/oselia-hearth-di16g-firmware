@@ -3,7 +3,7 @@
 Up to 8 MCP23017 chips => up to 128 inputs. Each input is addressed by (board, pin),
 board = position of the chip in cfg.MCP_ADDRESSES (1-based), pin = 1..16. All
 inputs belong to ONE HA device; trigger subtype is "board<b>_input<p>" (overridable
-via cfg.INPUT_NAME_OVERRIDES). See SPEC.md sec.5.
+via cfg.INPUT_NAME_OVERRIDES). See docs/spec.md sec.5.
 
 Topic/payload builders are pure (json/string only) for host testing.
 """

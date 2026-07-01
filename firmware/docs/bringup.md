@@ -3,7 +3,7 @@
 > ⚠️ **USB-C and the 24 V supply are mutually exclusive on this board — never both on.**
 > Do all USB work (deploy, serial logs) with the **24 V OFF**; to exercise the 24 V inputs,
 > **unplug USB first**, then power 24 V and observe over **MQTT + the status LED** (you
-> can't watch USB serial and drive inputs at the same time). See `PINOUT.md` →
+> can't watch USB serial and drive inputs at the same time). See `hardware.md` →
 > "Powering the board".
 
 Tick top-to-bottom. Each stage gates the next — don't move on until the
@@ -51,7 +51,7 @@ and HA steps the scripts can't do (wiring, switch presses, HA UI).
 
 ## 2. Flash + deploy
 - [ ] MicroPython UF2 on the board — pinned to **v1.28.0** (RPI_PICO build); see
-      `FLASHING.md` for the exact file and steps (BOOTSEL via the **BOOT+RESET** button
+      `flashing.md` for the exact file and steps (BOOTSEL via the **BOOT+RESET** button
       dance or `machine.bootloader()`, drag the UF2, it reboots). The littlefs
       filesystem survives a UF2 flash.
 - [ ] `mpremote connect <port> fs cp config.py :`
@@ -133,5 +133,5 @@ and HA steps the scripts can't do (wiring, switch presses, HA UI).
 - [ ] Reconnect, MCP-recovery, and watchdog behaviours verified.
 - [ ] Timings tuned and `config.py` saved/backed up.
 
-Cross-references: pins/wiring → SPEC.md §2; MCP regs → §7; MQTT topics → §5;
-robustness → §12; open hardware items → §11; confirmed POC facts → POC_NOTES.md.
+Cross-references: pins/wiring → spec.md §2; MCP regs → §7; MQTT topics → §5;
+robustness → §12; open hardware items → §11; confirmed POC facts → hardware.md.

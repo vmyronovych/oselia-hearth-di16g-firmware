@@ -14,7 +14,7 @@ Do this when you bring up a **new** RP2040-ETH board, or to update the interpret
 > ⚠️ **Power:** on the `dib-monolith` board you must **never** have USB-C connected and
 > the **24 V supply on at the same time**. Switch the 24 V supply **OFF before** plugging
 > in USB (for flashing *and* for `deploy.sh`), and only switch it back on after USB is
-> unplugged. See `PINOUT.md` → "Powering the board".
+> unplugged. See `hardware.md` → "Powering the board".
 
 ## Which UF2
 
@@ -34,7 +34,7 @@ board-specific port is needed. The generic Pico image is correct.
 `neopixel` module and `machine.bitstream` (it silently breaks the status LED) and is
 missing years of dual-core / stability fixes. 1.28.0 (2026-04-06) was the current stable
 when this firmware was validated. A newer stable is fine, but re-run the host gate +
-`BRINGUP.md` after changing it. (Our WS2812 driver uses PIO and does **not** depend on
+`bringup.md` after changing it. (Our WS2812 driver uses PIO and does **not** depend on
 `neopixel`, so it works on any RP2040 build.)
 
 ## How to flash
@@ -82,7 +82,7 @@ PORT=$(mpremote connect list | awk '/MicroPython/{print $1; exit}')
 mpremote connect "$PORT" exec "import sys; print(sys.implementation.version)"   # (1, 28, 0, '')
 ```
 
-Then follow `BRINGUP.md` from §2. The USB port re-enumerates after the flash (the serial
+Then follow `bringup.md` from §2. The USB port re-enumerates after the flash (the serial
 device name may change); the `tools/` scripts auto-detect it.
 
 ### Re-flashing a board that already has firmware (watchdog interplay)

@@ -50,7 +50,7 @@ happens under the hood and the rare recovery case.
 Зачекайте ~1 хвилину — якщо нова версія не «підтвердилась», шлюз сам відкотиться і
 повернеться онлайн на старій прошивці. Стан оновлення видно у статусі пристрою в HA. Якщо
 шлюз не повертається онлайн зовсім — перевірте Ethernet/живлення; як крайній засіб
-застосовується відновлення через USB (див. `firmware/FLASHING.md`).
+застосовується відновлення через USB (див. `docs/flashing.md`).
 
 ### Перевірка
 Після оновлення версія прошивки у картці пристрою відповідає новому релізу, індикатор
@@ -86,7 +86,7 @@ Updates use two firmware copies (A/B) with a boot-confirm gate:
 Give it ~1 minute — if the new build doesn't "confirm" itself, the gateway auto-reverts and
 comes back online on the previous firmware. The update stage is visible in the device's
 status in HA. If the gateway doesn't come back online at all, check Ethernet/power; as a
-last resort it can be recovered over USB (see `firmware/FLASHING.md`).
+last resort it can be recovered over USB (see `docs/flashing.md`).
 
 ### Verify
 After the update the firmware version on the device card matches the new release, the status

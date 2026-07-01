@@ -31,7 +31,7 @@ except Exception:
     status_led = None
 
 # The hardware watchdog lives on CORE 1 (the network task), not core 0. Rationale
-# (SPEC.md sec.12 + user requirement): an MCP/I2C stall on core 0 must NEVER reboot
+# (docs/spec.md sec.12 + user requirement): an MCP/I2C stall on core 0 must NEVER reboot
 # the board -- a dead bus is reported and recovered, not reset. The WDT therefore
 # guards only the *network* core: it is fed from _beat() (called every core1 pass and
 # during every chunked blocking wait), so it trips only if net_task itself wedges.
@@ -90,7 +90,7 @@ def run(shared, queue, device_id):
 
     avail_topic = ha.availability_topic(cfg, device_id)
 
-    # OTA topics + state (OTA_SPEC.md). The bundle streams as chunks over the live
+    # OTA topics + state (docs/ota.md). The bundle streams as chunks over the live
     # broker session (no CH9120 retarget); slots/boot-confirm logic lives in ota.py.
     _ota_base = ha.base(cfg, device_id)
     ota_cmd_topic = _ota_base + "/ota/cmd"
@@ -266,7 +266,7 @@ def run(shared, queue, device_id):
         else:
             log.warn("unknown command: %s" % name, every_ms=5000, key="cmd")
 
-    # ---- OTA over MQTT (see OTA_SPEC.md) ----
+    # ---- OTA over MQTT (see docs/ota.md) ----
     def _ota_publish_state(stage, target=None, percent=None, error=None):
         st = {"stage": stage, "running_version": cfg.SW_VERSION}
         if target is not None:

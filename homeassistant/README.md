@@ -44,4 +44,4 @@ action branch.
 
 The OSELIA integration carries the firmware release feed, configured in HA (OSELIA →
 **Configure** → *Firmware release feed URL*, + a GitHub token for a private repo). Set it
-once and every gateway updates from the HA UI. See `../firmware/RELEASING.md`.
+once and every gateway updates from the HA UI. See `../firmware/docs/releasing.md`.

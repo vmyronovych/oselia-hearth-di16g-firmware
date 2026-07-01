@@ -7,7 +7,7 @@ no `timeout(1)` (we use `perl alarm`), the USB CDC re-enumerates after `reset`
 sizes), and MQTT topic wildcards avoid hardcoding the device id.
 
 Prereqs: `mpremote`, `mosquitto_sub`, `docker` (for the broker), board flashed with
-MicroPython. See `../BRINGUP.md` for the full human checklist and the test-rig
+MicroPython. See `../docs/bringup.md` for the full human checklist and the test-rig
 facts (board port, broker = this Mac at 192.168.1.104, only board1 @0x20 wired).
 
 | Script | What it does |

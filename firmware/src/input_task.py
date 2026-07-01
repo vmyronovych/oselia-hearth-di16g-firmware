@@ -15,7 +15,7 @@ shared open-drain IRQ across satellite boards is inherently fragile). Polling is
 deterministic, self-healing, and -- with the hardware RC+optocoupler debounce --
 plenty fast for wall switches.
 
-Resilience (SPEC.md sec.12) -- an MCP fault must never freeze healthy inputs nor
+Resilience (docs/spec.md sec.12) -- an MCP fault must never freeze healthy inputs nor
 reboot the board: a chip that fails reads is marked down, skipped, and recovered.
 Recovery escalates, rate-limited with backoff: L1 = clock the I2C bus to free a
 stuck SDA; L2 = pulse the MCP /RESET line. The watchdog lives on core1, so a core0
@@ -286,7 +286,7 @@ def run(shared, queue):
 
     # NOTE: input is PURE POLLING -- there is no MCP interrupt. core0 also does NOT own
     # the watchdog (it's on core1), so an MCP/I2C stall on this core can never reboot
-    # the board -- a hung bus is reported and recovered, never reset (SPEC.md sec.12).
+    # the board -- a hung bus is reported and recovered, never reset (docs/spec.md sec.12).
     # Bounded I2C ops keep this loop responsive regardless.
 
     while True:

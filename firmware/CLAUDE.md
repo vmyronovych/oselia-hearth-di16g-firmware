@@ -3,9 +3,9 @@
 You are implementing MicroPython firmware for a **Waveshare RP2040-ETH** board that
 turns 16 isolated 24 V wall-switch inputs into Home-Assistant MQTT events.
 
-**Read `SPEC.md` first** (the contract), then **`POC_NOTES.md`** (hardware facts
+**Read `docs/spec.md` first** (the contract), then **`docs/hardware.md`** (hardware facts
 confirmed on real hardware by a working proof-of-concept). This file is *how* to
-work. When SPEC and POC_NOTES agree, that detail is settled — don't re-litigate it.
+work. When `docs/spec.md` and `docs/hardware.md` agree, that detail is settled — don't re-litigate it.
 
 ## Ground truth you must not get wrong
 
@@ -14,31 +14,27 @@ work. When SPEC and POC_NOTES agree, that detail is settled — don't re-litigat
   configure it as a **TCP client** to the broker, then the **UART byte stream is the
   raw MQTT/TCP payload**. Never `import usocket` to reach the broker.
 - Target = MicroPython on RP2040 (Thonny / `mpremote` / drag-drop UF2). This board
-  runs **MicroPython 1.28.0** (RPI_PICO build) — see `FLASHING.md` for the pinned UF2
+  runs **MicroPython 1.28.0** (RPI_PICO build) — see `docs/flashing.md` for the pinned UF2
   version and how to reflash.
 - The broker must be addressed by **numeric IP** (CH9120 does no DNS).
 
-## Hardware pins (manufactured `dib-monolith` board; all live in `config.py` — never hard-code)
+## Hardware pins (manufactured `dib-monolith` board)
 
-- CH9120: `UART(1, tx=Pin(20), rx=Pin(21))`; config baud 9600 then re-open at
-  115200. CFG0=GP18 (LOW=config), RST=GP19 (active LOW). TCPCS=GP17 (LOW=connected) is
-  **disabled** (`PIN_CH9120_TCPCS=None`) — unvalidated, it caused a reconnect flap; link
-  liveness is the MQTT keepalive PINGREQ/PINGRESP cycle instead. Internal to the RP2040-ETH module — unchanged from POC.
-- MCP23017 ×(1..8): `I2C(1, sda=Pin(26), scl=Pin(27))` shared bus (**I2C1**, the
-  RP2040 native pair). Auto-discovered at boot (`MCP_AUTODISCOVER`) across the full
-  strap range 0x20..0x27; `MCP_ADDRESSES` is the fallback/explicit list. **Board =
-  position in the resolved list, 1-based.** Shared wired-OR INT on **GP22**
-  (`IRQ_FALLING`+pull-up); `IOCON=0x44` (MIRROR+**ODR** for the shared line). MCP
-  `/RESET` on **GP9** (active-low, pulsed at boot via `input_task.release_mcp_reset`).
-  Global input index = `(board-1)*16 + pin`; up to 128 inputs.
-  > POC used I2C0 GP0/GP1, INT GP2, no RESET GPIO — the PCB re-routed these. See
-  > POC_NOTES.md for the delta; don't "restore" POC pin values.
-- WS2812 status LED: GP25, **RGB** wire order (`STATUS_LED_ORDER="RGB"` — this LED
-  shows green-as-red under GRB). Driven via the **RP2040 PIO** (build lacks
-  `neopixel`/`bitstream`), not `led[0]=...`.
-- Active-low inputs (level 0 = pressed). Proven timings: long 400 ms, double 300 ms.
+**Canonical pin map, powering rules, and device-init facts: [`docs/hardware.md`](docs/hardware.md).**
+All pins live in `config.py` — **never hard-code**. The essentials you must not get wrong:
 
-## Concurrency (dual-core) — see SPEC.md §3a
+- **I2C1** `sda=GP26 / scl=GP27` (RP2040 native pair) — MCP23017 shared bus; INT **GP22**
+  (wired-OR, `IOCON=0x44` = MIRROR+ODR), `/RESET` **GP9** (active-low).
+- **CH9120** `UART(1, tx=GP20, rx=GP21)` (internal to the module); CFG0 GP18, RST GP19;
+  TCPCS GP17 **disabled** (`=None` — liveness is MQTT keepalive).
+- **WS2812 LED** GP25, **RGB** order, driven via PIO (build lacks `neopixel`/`bitstream`).
+- Active-low inputs (0 = pressed). Board = position in the resolved `MCP_ADDRESSES`
+  (0x20..0x27), 1-based; global index `(board-1)*16 + pin`, up to 128 inputs.
+
+> The breadboard POC used different pins (I2C0 GP0/GP1, INT GP2, no RESET). The PCB
+> re-routed them — see `docs/hardware.md`; **don't "restore" POC pin values.**
+
+## Concurrency (dual-core) — see docs/spec.md §3a
 
 - Core 0 = `input_task` (main thread): MCP IRQ + debounce + detect → queue. Does NOT own
   the WDT (an MCP/I²C stall must never reboot); bounded I²C so a dead bus can't wedge it.
@@ -61,7 +57,7 @@ work. When SPEC and POC_NOTES agree, that detail is settled — don't re-litigat
 Complete and host-tested; the full feature set is also **HA-verified on hardware**
 (local HA 2025.11). Beyond the core (detector, debounce, queue, clock, mqtt_packets,
 CH9120 driver, MCP driver, MQTT client, both task loops, `main`), the firmware now
-includes a **Home Assistant integration layer** (see SPEC.md §5.1a–5.4):
+includes a **Home Assistant integration layer** (see docs/spec.md §5.1a–5.4):
 
 - `diag.py` — diagnostics telemetry (`…/diag/state`, retained) + HA diagnostic
   entities (uptime, free heap, RP2040 die temp, board addresses, reconnects, dropped,
@@ -90,7 +86,7 @@ reference. Any command/diagnostic publish must stay **behind the gesture-queue d
 - Keep `press_detector.py` and `debounce.py` **pure** (no `machine`/`network`
   imports) so they run under CPython for unit tests. Inject the clock as a
   parameter or a callable.
-- One responsibility per module per `SPEC.md §8`. Don't merge networking into main.
+- One responsibility per module per `docs/spec.md §8`. Don't merge networking into main.
 - Fail safe: if the broker is unreachable, keep retrying with backoff; never crash
   the loop. Log to USB serial.
 
@@ -102,22 +98,22 @@ reference. Any command/diagnostic publish must stay **behind the gesture-queue d
    `for t in tests/test_*.py; do python3 "$t"; done`.
 3. **Deploy** to the board with `mpremote`:
    `mpremote connect <port> fs cp config.py src/*.py :` then reset (runs `main.py`).
-4. **On-device checks** per `SPEC.md §9`: link/keepalive healthy, `mosquitto_sub`
+4. **On-device checks** per `docs/spec.md §9`: link/keepalive healthy, `mosquitto_sub`
    sees discovery + action topics, HA shows the device & triggers, LED states.
 
 Do not mark a task done if py_compile fails, host tests fail, or an implementation
-is partial (`SPEC.md §10`).
+is partial (`docs/spec.md §10`).
 
 ## Definition of done
 
-Everything in **SPEC.md §10 Acceptance criteria** holds. When something can only be
-confirmed on hardware (`SPEC.md §11`), implement to the documented assumption,
+Everything in **docs/spec.md §10 Acceptance criteria** holds. When something can only be
+confirmed on hardware (`docs/spec.md §11`), implement to the documented assumption,
 leave a clearly-marked `# HW-VERIFY:` comment, and note it for the user.
 
 ## Remaining work (the code is otherwise complete)
 
 1. `cp config.example.py config.py`; set broker IP, network, input names.
-2. Flash MicroPython (UF2 v1.28.0 — see `FLASHING.md`), copy `src/*.py` + `config.py`
+2. Flash MicroPython (UF2 v1.28.0 — see `docs/flashing.md`), copy `src/*.py` + `config.py`
    to the board root.
 3. On-hardware bring-up: confirm CH9120 connects, watch the LED state machine,
    verify `mosquitto_sub` sees retained discovery + per-gesture action topics.

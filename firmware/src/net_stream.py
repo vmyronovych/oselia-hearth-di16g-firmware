@@ -2,7 +2,7 @@
 
 In transparent mode the CH9120 UART carries the raw TCP payload to/from the broker,
 so this wraps the UART with simple, robust write-all / read-available semantics for
-the MQTT client. See SPEC.md sec.4.
+the MQTT client. See docs/spec.md sec.4.
 """
 try:
     import utime as _t

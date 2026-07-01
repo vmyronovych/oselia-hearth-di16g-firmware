@@ -12,7 +12,7 @@ Two paths, ported verbatim from the original single-file wizard (HW-confirmed be
     for a bare/idle board; fragile on a running watchdog unit, hence the cooperative path
     is tried first. restore_app() undoes it.
 
-See PROVISIONING_SPEC.md sec.3.1 / firmware/SPEC.md sec.5.3.
+See PROVISIONING_SPEC.md sec.3.1 / firmware/docs/spec.md sec.5.3.
 """
 import time
 

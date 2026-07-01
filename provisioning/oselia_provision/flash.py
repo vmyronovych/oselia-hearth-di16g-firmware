@@ -63,14 +63,14 @@ def _enter_bootsel(port):
         board.exec_(port, "import machine; machine.bootloader()")
     else:
         console.warn("Put the board into BOOTSEL: hold BOOT + RESET, release RESET, then "
-                     "release BOOT (see firmware/FLASHING.md).")
+                     "release BOOT (see firmware/docs/flashing.md).")
         if console.INTERACTIVE:
             input("  Press Enter once the board is in BOOTSEL ...")
         else:
             console.info("  (non-interactive: waiting up to 30s for the RPI-RP2 drive)")
     mount = _wait_for_bootsel(timeout=30)
     if not mount:
-        console.die("BOOTSEL drive (RPI-RP2) didn't appear -- see firmware/FLASHING.md.")
+        console.die("BOOTSEL drive (RPI-RP2) didn't appear -- see firmware/docs/flashing.md.")
     return mount
 
 
@@ -158,7 +158,7 @@ def ensure_micropython(mpy_uf2, port):
         if not console.confirm("Re-flash MicroPython %s now?" % EXPECTED_MPY_VERSION,
                                default=True):
             console.info("  Keeping %s -- the pinned build carries features/fixes the "
-                         "firmware expects (firmware/FLASHING.md)." % ver)
+                         "firmware expects (firmware/docs/flashing.md)." % ver)
             return port
         return flash_micropython(mpy_uf2, port, wipe=True)
     if board.port_is_micropython(port, wait_s=10):
@@ -175,7 +175,7 @@ def ensure_micropython(mpy_uf2, port):
         "  RUNNING unit can't always be re-provisioned in place.\n"
         "  Recover it for a CLEAN re-provision: hold the BOOT button while plugging in USB (it\n"
         "  mounts as RPI-RP2), then re-run `oselia provision` -- it does a wiped flash and\n"
-        "  provisions. See firmware/FLASHING.md.")
+        "  provisions. See firmware/docs/flashing.md.")
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ def erase_flash(port, erase_uf2=None):
     except OSError:
         pass            # board erases + reboots to BOOTSEL as the UF2 lands; tail error normal
     console.ok("Flash erased -- the board is now bare-metal RP2040 (empty flash, in BOOTSEL).")
-    console.info("To use it again, flash MicroPython: `oselia flash`, or see firmware/FLASHING.md.")
+    console.info("To use it again, flash MicroPython: `oselia flash`, or see firmware/docs/flashing.md.")
     return 0
 
 

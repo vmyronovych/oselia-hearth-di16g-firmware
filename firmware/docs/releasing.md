@@ -93,4 +93,4 @@ broker — the device never touches the internet.
   `latest/download` URL skips prereleases, so stable units aren't offered it.
 - **Integrity vs authenticity:** the device verifies the bundle sha256 (corruption);
   the download is HTTPS from GitHub. **Signing** the bundle (authenticity) is a sensible
-  future hardening — see `OTA_SPEC.md` "Out of scope".
+  future hardening — see `ota.md` "Out of scope".

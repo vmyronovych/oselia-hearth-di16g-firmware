@@ -1,5 +1,5 @@
 """Deploy the firmware app to the board in the OTA A/B slot layout, so a freshly
-provisioned unit is OTA-ready out of the box (firmware/OTA_SPEC.md).
+provisioned unit is OTA-ready out of the box (firmware/docs/ota.md).
 
 Layout written:
     /main.py            loader (installed LAST; never part of an OTA bundle)

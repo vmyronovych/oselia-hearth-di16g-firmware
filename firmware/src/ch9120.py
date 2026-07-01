@@ -2,7 +2,7 @@
 
 The CH9120 holds the TCP/IP stack. We configure it once (serial config mode) as a
 TCP client pointed at the MQTT broker, then switch to transparent mode where the
-UART byte stream == the TCP byte stream to/from the broker. See SPEC.md sec.4.
+UART byte stream == the TCP byte stream to/from the broker. See docs/spec.md sec.4.
 
 Control pins (from config.py):
   CFG0  LOW  -> serial configuration mode   (GP18)

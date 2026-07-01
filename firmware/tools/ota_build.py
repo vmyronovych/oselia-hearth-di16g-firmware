@@ -2,7 +2,7 @@
 """Build an OTA bundle artifact (+ optional release manifest) from a firmware src dir.
 
 The bundle is what the HA integration downloads and streams to the device; the device
-verifies its sha256 before applying (firmware/OTA_SPEC.md). Use in a release pipeline:
+verifies its sha256 before applying (firmware/docs/ota.md). Use in a release pipeline:
 build the bundle, upload it (e.g. a GitHub Release asset), and publish a manifest JSON
 that the integration's release feed (CONF_RELEASE_URL) points at.
 

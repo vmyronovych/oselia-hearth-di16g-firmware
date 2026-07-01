@@ -2,7 +2,7 @@
 
 All 16 pins are inputs with pull-ups; the firmware reads by POLLING (input_task), so the
 chip's interrupt machinery is left off (GPINTEN=0 -- the shared INT caused the original
-freeze/dropped-press faults; see SPEC.md sec.7/12). `read_all()` reads both ports in one
+freeze/dropped-press faults; see docs/spec.md sec.7/12). `read_all()` reads both ports in one
 transaction. Pins/address come from config.py.
 """
 

@@ -40,7 +40,7 @@ def resolve_mpy(override):
     """The pinned MicroPython UF2 (bundle / cache / download), or None."""
     uf2 = cached_uf2(MPY_UF2_URL, MPY_UF2_NAME, override, min_size=100000)
     if not uf2:
-        console.warn("  Fetch it manually and pass --mpy-uf2 PATH (see firmware/FLASHING.md):")
+        console.warn("  Fetch it manually and pass --mpy-uf2 PATH (see firmware/docs/flashing.md):")
         console.warn("    " + MPY_UF2_URL)
     return uf2
 

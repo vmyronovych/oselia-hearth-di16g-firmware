@@ -6,7 +6,7 @@
       detection, pushes events to the queue, owns the watchdog.
 
 They communicate only through a thread-safe EventQueue (gestures) and a lock-guarded
-SharedState (health + heartbeat). See SPEC.md sec.3a (concurrency) and sec.12
+SharedState (health + heartbeat). See docs/spec.md sec.3a (concurrency) and sec.12
 (robustness).
 """
 import _thread
