@@ -34,8 +34,8 @@ die temperature, link/board health, last log) and accepts **two-way control** (R
 - `docs/bringup.md` — bench bring-up checklist (the physical/HA steps scripts can't do).
 - `docs/releasing.md` — cut a firmware release (GitHub → HA OTA feed).
 - `docs/upgrading.md` — end-user upgrade guide (bilingual; linked from every release).
-- `tools/` — on-hardware flash/test/debug scripts (`tools/README.md`).
-- `.claude/skills/hw-test/` — project skill that orchestrates those scripts (see below).
+- `.claude/skills/hw-test/` — project skill: on-hardware **acceptance** + bring-up/debug,
+  driven entirely through the `oselia` CLI. Includes `acceptance-matrix.md` (see below).
 - `.claude/agents/hw-runner.md` — cheap (Sonnet) runner subagent for the green path (see below).
 
 ## Quick start (development)
@@ -48,69 +48,70 @@ cp config.example.py config.py        # then edit broker IP, pins, timings
 python3 -m py_compile src/*.py        # syntax check
 python3 tests/test_press_detector.py  # logic tests
 
-# 3. deploy to the board (MicroPython already flashed — see docs/flashing.md) — copy to root
-mpremote connect /dev/ttyACM0 fs cp config.py :
-mpremote connect /dev/ttyACM0 fs cp src/*.py :
-mpremote connect /dev/ttyACM0 reset      # runs main.py
+# 3. provision the board (flashes MicroPython if needed, writes site.json, deploys the
+#    firmware into the OTA slot layout, confirms it reports online) — see the oselia CLI
+oselia provision --broker 192.168.1.104
 ```
+
+> Deploy is **slot-aware**: the loader boots `/slots/a/app.py`, so copying files to the
+> board root is a no-op. Always go through `oselia provision` (never raw `mpremote` copies).
 
 ## On-hardware bring-up, testing & debugging
 
-Three cooperating layers let you (or Claude) work at whatever altitude fits the
-task — plus the things only a human can do:
+Everything talks to the board and broker through the **`oselia` CLI** (see the
+`oselia-provision` skill). Three cooperating layers let you (or Claude) work at whatever
+altitude fits the task — plus the things only a human can do:
 
 | Layer | What it is | Reach for it when |
 |---|---|---|
-| `tools/*.sh` | deterministic scripts: flash, watch, bounce regression, serial | you know exactly what to run; CI; no Claude needed |
-| `hw-runner` agent (Sonnet) | runs the scripts, reports, **escalates on failure** — no edit tools | offloading the cheap green-path grind from Opus |
-| `hw-test` skill (session model) | picks the script, reads the output, drives diagnose→fix→verify, coordinates presses | "just make it work" / debugging a fault |
+| `oselia` CLI | the one tool: flash/provision, `monitor` (USB log), `mqtt watch/pub/cmd/bounce` | you know exactly what to run; CI; no Claude needed |
+| `hw-runner` agent (Sonnet) | runs `oselia`, reports, **escalates on failure** — no edit tools | offloading the cheap green-path grind from Opus |
+| `hw-test` skill (session model) | provisions a baseline, drives the §10 acceptance suite to a verdict, diagnose→fix→verify, coordinates presses | "prove this change on hardware" / debugging a fault |
 | **you** | physical 24 V switch presses, HA UI checks, final calls | the steps automation can't perform |
 
-**The scripts** encode the macOS/USB quirks once (macOS has no `timeout(1)`; the USB
-CDC re-enumerates after `reset`; `mpremote` copies can silently fail; MQTT topic
-wildcards avoid hardcoding the device id). Run them by hand from the repo root:
+The `oselia` CLI encodes the macOS/USB quirks once (the firmware watchdog resets the board
+on a REPL break-in; the USB CDC re-enumerates after reset; the loader boots `/slots/a`). Run
+it by hand from the repo root:
 
 ```bash
-tools/deploy.sh                 # flash src/*.py, verify every size, reset, settle
-tools/watch.sh status 10        # availability online/offline (LWT)
-tools/watch.sh discovery 4      # retained HA discovery configs
-tools/watch.sh actions 45       # press switches; see single / double / long
-tools/watch.sh diag 15          # diagnostics telemetry (diag/state + diag entities)
-tools/bounce-test.sh            # broker-outage self-heal regression (exit 0 = pass)
-tools/serial.sh 25              # capture a fresh boot's serial logs
+oselia provision --broker 192.168.1.104        # flash if needed, write site.json, deploy /slots/a
+oselia monitor --passive                       # stream the firmware's USB log (listen only)
+oselia mqtt watch hearth/<id>/status --for 40  # availability online/offline (LWT)
+oselia mqtt watch 'homeassistant/#' --for 6 --expect-absent '.'   # assert NO firmware HA discovery
+oselia mqtt watch hearth/<id>/board1/input1/action --for 45       # press switches; single/double/long
+oselia mqtt watch hearth/<id>/diag/# --for 15  # diagnostics telemetry (diag/state)
+oselia mqtt bounce --down 8                     # broker-outage self-heal check
 ```
 
-Defaults (auto-detected board port, broker, container) live in `tools/_common.sh`
-and are env-overridable: `PORT= BROKER= BROKER_PORT= MOSQ_CONTAINER= WATCH=`. See
-`tools/README.md` for details and `docs/bringup.md` for the full checklist.
+See the `hw-test` skill's `acceptance-matrix.md` for the full §10 criterion→proof table, and
+`docs/bringup.md` for the physical/HA bring-up checklist.
 
 ### The `hw-test` skill
 
 `.claude/skills/hw-test/SKILL.md` is a Claude Code **project skill** — it ships
 with the repo (committed, not personal), so it's available to anyone who opens the
-project in Claude Code. It's the judgment layer over the scripts above: it picks
-the right one, interprets the output (e.g. *two `single`s instead of a `double` →
-raise `DOUBLE_GAP_MS`*), runs the diagnose → fix → redeploy → re-verify loop, and
-prompts you when a step needs a physical switch press.
+project in Claude Code. It's the judgment layer over `oselia`: it provisions a known
+baseline, drives the §10 acceptance suite (`acceptance-matrix.md`) to a per-criterion
+verdict — each proven on **both** the USB log and the MQTT wire — interprets the output
+(e.g. *two `single`s instead of a `double` → raise `DOUBLE_GAP_MS`*), runs the diagnose →
+fix → re-provision → re-verify loop, and prompts you when a step needs a physical press.
 
 Use it by **describing the task in plain language** and Claude pulls it in — e.g.
-*"flash the firmware and confirm it's online"*, *"run the broker-bounce
-regression"*, *"watch the action topics while I press switches"* — or invoke it
-explicitly with `/hw-test`. A newly added project skill registers at session
-start, so reload/restart Claude Code if you just pulled it. Note: gesture tests
-still require you to physically actuate the 24 V inputs — automation can't.
+*"prove this change on hardware"*, *"run the broker-bounce reconnect check"*, *"watch the
+action topics while I press switches"* — or invoke it explicitly with `/hw-test`. A newly
+added project skill registers at session start, so reload/restart Claude Code if you just
+pulled it. Note: gesture tests still require you to physically actuate the 24 V inputs.
 
 ### Delegating the grind (cost routing)
 
-`.claude/agents/hw-runner.md` is a **subagent pinned to a cheaper model (Sonnet)**
-for the mechanical green-path work — flashing, status/discovery checks, the bounce
-regression, serial capture. It runs the `tools/` scripts and **reports only**: it
-has no edit tools and escalates to the orchestrating model on any failure, which
-keeps diagnosis and fixes on the higher tier. Drive it via the main session, e.g.
-*"have the hw-runner flash and run the bounce regression."* Reserve Opus for
-planning new functionality and debugging failures. (Note: cheaper models cut cost,
-but the hardware soaks — reset settle, gesture windows, the 60 s bounce watch — are
-fixed wall-clock either way.)
+`.claude/agents/hw-runner.md` is a **subagent pinned to a cheaper model (Sonnet)** for the
+mechanical green-path work — provisioning, the `online`/no-discovery checks, the bounce
+reconnect check, USB-log capture. It runs `oselia` and **reports only**: no edit tools, and
+it escalates to the orchestrating model on any failure, which keeps diagnosis and fixes on
+the higher tier. Drive it via the main session, e.g. *"have the hw-runner provision and run
+the bounce check."* Reserve Opus for planning new functionality and debugging failures.
+(Cheaper models cut cost, but the hardware soaks — provision settle, gesture windows, the
+bounce watch — are fixed wall-clock either way.)
 
 ### Putting it together — a typical change→ship loop
 
@@ -118,18 +119,17 @@ fixed wall-clock either way.)
 2. **Host gate** (never deploy red): `python3 -m py_compile src/*.py` and
    `for t in tests/test_*.py; do python3 "$t"; done`.
 3. **Delegate the on-hardware run to the cheap tier** — in your session say
-   *"have the hw-runner flash and run the bounce regression."* The Sonnet runner
-   executes `deploy.sh` → `watch.sh status` → `bounce-test.sh` and returns a compact
-   `RAN / RESULT / EVIDENCE / ESCALATE` report.
-4. **Branch on the result:** `PASS` → done. `FAIL` or `NEEDS-HUMAN` → the runner
-   escalates; the `hw-test` skill (on your session model, e.g. Opus) diagnoses,
-   fixes in `src/`, redeploys, and re-verifies — prompting you to press switches
-   when a gesture test needs it.
-5. **Commit** — `tools/`, the skill, and the agent all ship in-repo, so the next
-   person (or machine) gets the same flow.
+   *"have the hw-runner provision and run the bounce check."* The Sonnet runner executes
+   `oselia provision` → `oselia mqtt watch …/status` → `oselia mqtt bounce` and returns a
+   compact `RAN / RESULT / EVIDENCE / ESCALATE` report.
+4. **Branch on the result:** `PASS` → done. `FAIL` or `NEEDS-HUMAN` → the runner escalates;
+   the `hw-test` skill (on your session model, e.g. Opus) diagnoses, fixes in `src/`,
+   re-provisions, and re-verifies — prompting you to press switches when needed.
+5. **Commit** — the skill and the agent ship in-repo, so the next person (or machine) gets
+   the same flow.
 
-For a fully manual run, skip Claude entirely and use the `tools/*.sh` commands
-above; for an interactive bring-up of a fresh board, follow `docs/bringup.md`.
+For a fully manual run, skip Claude entirely and use the `oselia` commands above; for an
+interactive bring-up of a fresh board, follow `docs/bringup.md`.
 
 > **First-use note:** the `hw-test` skill and the `hw-runner` agent are discovered
 > at **session start**. After first cloning the repo (or right after adding them),
@@ -157,9 +157,10 @@ contract):
 Example: `hearth/893922/board1/input2/action` → `single`. The firmware publishes **no**
 `homeassistant/.../config` discovery — the OSELIA integration declares the entities.
 
-To inspect on the broker (MQTTX or `mosquitto_sub -h <broker> -v`):
-- `hearth/<id>/#` — availability, presses (live, not retained), `diag/*`, `cfg`.
-- Or use `tools/watch.sh diag` for the diagnostics topics specifically.
+To inspect on the broker:
+- `oselia mqtt watch 'hearth/<id>/#' --for 20` — availability, presses (live, not retained),
+  `diag/*`, `cfg`.
+- `oselia mqtt watch 'hearth/<id>/diag/#' --for 15` — the diagnostics topics specifically.
 
 ## Status LED
 

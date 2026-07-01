@@ -15,22 +15,22 @@ Full table + caveats in `README.md` → "Status LED".
 
 Handy terminal (run on a PC on the same LAN as the broker):
 ```
-mosquitto_sub -h <BROKER_IP> -t 'hearth/#' -v
-mosquitto_sub -h <BROKER_IP> -t 'homeassistant/device_automation/#' -v
+oselia mqtt watch 'hearth/#' --for 20
+oselia mqtt watch 'homeassistant/#' --for 6 --expect-absent '.'   # expect nothing
 ```
 
-**Automation:** the deterministic steps below are scripted in `tools/` (see
-`tools/README.md`) and orchestrated by the `hw-test` skill:
+**Automation:** the deterministic steps below run through the `oselia` CLI and are
+orchestrated by the `hw-test` skill (see its `acceptance-matrix.md`):
 ```
-tools/deploy.sh                 # flash src/*.py, verify sizes, reset (stages 2)
-tools/watch.sh status 10        # availability online/offline      (stages 5, 8)
-tools/watch.sh discovery 4      # retained HA discovery configs    (stage 7)
-tools/watch.sh actions 45       # press switches; single/double/long (stage 6)
-tools/bounce-test.sh            # broker-outage self-heal regression (stage 8)
-tools/serial.sh 25              # capture a fresh boot's serial logs
+oselia provision --broker <ip>                          # deploy /slots/a, reset (stage 2)
+oselia monitor --passive                                # capture a fresh boot's USB log
+oselia mqtt watch hearth/<id>/status --for 40           # availability online/offline (5, 8)
+oselia mqtt watch 'homeassistant/#' --for 6 --expect-absent '.'   # NO firmware discovery (7)
+oselia mqtt watch hearth/<id>/board1/input1/action --for 45       # press; single/double/long (6)
+oselia mqtt bounce --down 8                             # broker-outage self-heal (stage 8)
 ```
-Use the scripts for the mechanics; keep ticking this checklist for the physical
-and HA steps the scripts can't do (wiring, switch presses, HA UI).
+Use `oselia` for the mechanics; keep ticking this checklist for the physical and HA
+steps automation can't do (wiring, switch presses, HA UI).
 
 ---
 
@@ -39,9 +39,9 @@ and HA steps the scripts can't do (wiring, switch presses, HA UI).
       **OFF while USB is connected**; see the warning at the top).
 - [ ] Only **one** MCP board on the I²C bus for now (address 0x20, A0–A2 = 000).
 - [ ] External pull-up (~4.7 kΩ) on SDA and SCL present.
-- [ ] For deploy/serial stages: **24 V OFF**, then USB serial to the RP2040-ETH open
-      (`mpremote ... repl`) to watch logs. For input stages: unplug USB, 24 V ON, and
-      watch over MQTT/LED instead (can't do both at once).
+- [ ] For deploy/serial stages: **24 V OFF**, then stream the USB log with
+      `oselia monitor --passive`. For input stages: unplug USB, 24 V ON, and watch over
+      MQTT/LED instead (can't do both at once).
 
 ## 1. Configure
 - [ ] `cp config.example.py config.py`.
@@ -54,10 +54,11 @@ and HA steps the scripts can't do (wiring, switch presses, HA UI).
       `flashing.md` for the exact file and steps (BOOTSEL via the **BOOT+RESET** button
       dance or `machine.bootloader()`, drag the UF2, it reboots). The littlefs
       filesystem survives a UF2 flash.
-- [ ] `mpremote connect <port> fs cp config.py :`
-- [ ] `mpremote connect <port> fs cp src/*.py :`
-- [ ] Reset. **Expected:** REPL prints version + `id=…`, then config/bring-up logs;
-      no traceback. Config errors print an assertion from `_validate_config`.
+- [ ] `oselia provision --broker <ip>` — writes `site.json` and deploys the firmware into
+      `/slots/a` (slot-aware; raw `fs cp` to the board root is a no-op with the loader).
+- [ ] It resets automatically. **Expected** (via `oselia monitor --passive`): the log
+      prints version + `id=…`, then `boot: reset_cause=…` and config/bring-up logs; no
+      traceback. Config errors print an assertion from `_validate_config`.
 
 ## 3. I²C / MCP23017 (one chip)
 - [ ] Log shows `board1 MCP@0x20 ready` (no `init failed`).
@@ -73,7 +74,7 @@ and HA steps the scripts can't do (wiring, switch presses, HA UI).
 
 ## 5. CH9120 → broker
 - [ ] LED leaves blue; reaches **green** (or red/orange if not connected).
-- [ ] `hearth/<id>/status` shows `online` (retained) in `mosquitto_sub`.
+- [ ] `hearth/<id>/status` shows `online` (retained) — `oselia mqtt watch hearth/<id>/status`.
 - [ ] Press inputs → `hearth/<id>/board1/input<p>/action` shows `single` /
       `double` / `long`.
 - [ ] **Expected:** quick tap=`single`, two quick taps=`double` (no stray single),
@@ -93,7 +94,7 @@ and HA steps the scripts can't do (wiring, switch presses, HA UI).
 ## 8. Robustness paths
 - [x] **Broker bounce:** stop broker → `status` (LWT) → `offline`; restart →
       reconnects with backoff, `online`, discovery republished.
-      *(verified via `tools/bounce-test.sh`; LED colour not visually checked)*
+      *(verified via `oselia mqtt bounce`; LED colour not visually checked)*
 - [ ] **Offline buffering:** press while broker down, bring broker back → buffered
       gestures flush (within `EVENT_QUEUE_SIZE`).
 - [x] **MCP pull (I²C line):** disconnect SDA/SCL → read fails `EIO`, LED **yellow**

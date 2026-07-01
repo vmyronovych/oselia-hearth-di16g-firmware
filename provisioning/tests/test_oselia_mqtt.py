@@ -60,6 +60,74 @@ def test_split_publish_roundtrip():
     assert topic == "topic/seg" and payload == b"payload"
 
 
+class _FakeSock:
+    """A scripted socket: recv() pops from a byte buffer, raising socket.timeout when
+    drained (mirrors a quiet broker). Records everything sent."""
+    def __init__(self, buffer=b""):
+        self._buf = bytearray(buffer)
+        self.sent = bytearray()
+
+    def settimeout(self, _):
+        pass
+
+    def sendall(self, data):
+        self.sent += data
+
+    def recv(self, n):
+        if not self._buf:
+            import socket as _s
+            raise _s.timeout()
+        chunk = bytes(self._buf[:n])
+        del self._buf[:n]
+        return chunk
+
+    def close(self):
+        pass
+
+
+_CONNACK = b"\x20\x02\x00\x00"          # CONNACK, return code 0 (accepted)
+
+
+def _patch_conn(monkey_sock):
+    import socket
+    orig = socket.create_connection
+    socket.create_connection = lambda *a, **k: monkey_sock
+    return orig, socket
+
+
+def test_publish_sends_connect_then_publish_and_coerces_str():
+    fake = _FakeSock(_CONNACK)
+    import socket
+    orig = socket.create_connection
+    socket.create_connection = lambda *a, **k: fake
+    try:
+        ok = m.publish("1.2.3.4", 1883, None, None, "hearth/1/cmd/Restart", "go", retain=True)
+    finally:
+        socket.create_connection = orig
+    assert ok is True
+    # a CONNECT (0x10) went out, then a retained PUBLISH (0x31) carrying the coerced payload.
+    assert fake.sent[0] == 0x10
+    assert b"\x31" in fake.sent and b"hearth/1/cmd/Restart" in fake.sent and b"go" in fake.sent
+
+
+def test_watch_collects_publishes_and_invokes_callback():
+    pub = m.build_publish("hearth/893922/status", b"online")
+    fake = _FakeSock(_CONNACK + pub)
+    import socket
+    orig = socket.create_connection
+    socket.create_connection = lambda *a, **k: fake
+    seen = []
+    try:
+        msgs = m.watch("1.2.3.4", 1883, None, None, ["hearth/+/status"], duration=0.2,
+                       on_message=lambda t, p, e: seen.append((t, p)))
+    finally:
+        socket.create_connection = orig
+    assert msgs and msgs[0][0] == "hearth/893922/status" and msgs[0][1] == b"online"
+    assert seen and seen[0][0] == "hearth/893922/status"
+    # a SUBSCRIBE (0x82) for the requested filter was actually sent.
+    assert b"\x82" in fake.sent and b"hearth/+/status" in fake.sent
+
+
 def _run():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

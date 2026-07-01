@@ -169,6 +169,12 @@ DIAG_FAULT_RING = 16           # recent[] fault-history length in the diag blob 
 # (Restart, Identify). Commands are handled on core1 after the gesture queue is
 # drained, so they never delay a button publish.
 CONTROL_ENABLE = True
+# Acceptance test hooks: when True, net_task exposes debug-only fault-injection commands
+# (`_debug_stall` -> trips the core1 watchdog for §10; `_debug_mcp_fault <board>` -> forces
+# an MCP read fault + recovery for §11) so the hw acceptance suite can PROVE those recovery
+# paths over USB+MQTT. MUST stay False in shipped firmware -- production builds compile the
+# handlers out. The `oselia provision --acceptance` path flips this on for a bench unit.
+ACCEPTANCE_HOOKS = False
 # With DHCP the MCU doesn't know its leased IP; net_task reads it once from the
 # CH9120 at boot (read-only config round-trip) after this settle for the lease.
 # Only happens on the initial bring-up, never on reconnect. 0 disables the read.
@@ -227,6 +233,10 @@ try:
         MCP_AUTODISCOVER = False
     if "diag" in _site:
         DIAG_ENABLE = bool(_site["diag"])
+    if "acceptance_hooks" in _site:
+        # Bench-only: enable the §10/§11 fault-injection commands for the hw acceptance
+        # suite. Production site.json never carries this key -> hooks stay off.
+        ACCEPTANCE_HOOKS = bool(_site["acceptance_hooks"])
     # Live-tunable values persisted by the board itself when changed from HA
     # (number/select entities). They override the hardware defaults on next boot.
     if "long_ms" in _site:

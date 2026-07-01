@@ -1,87 +1,116 @@
 ---
 name: hw-test
 description: >-
-  Flash, test, and debug the RP2040-ETH switch firmware on the real board over
-  mpremote + a local MQTT broker. Use when asked to flash/deploy to the board,
-  bring it up on hardware, watch MQTT action/availability/diag topics, test
-  gestures, run the broker-bounce reconnect regression, or capture board serial
-  logs. Orchestrates the deterministic helpers in tools/.
+  Bring up, debug, and run HARDWARE ACCEPTANCE on the RP2040-ETH switch firmware on the
+  real board, driven entirely through the `oselia` CLI. Use when asked to flash/provision
+  the board, prove a firmware change works on hardware, run the §10 acceptance suite, watch
+  MQTT action/status/diag/cfg topics, exercise the broker-bounce reconnect path, or capture
+  USB firmware logs. Every criterion is proven on BOTH the USB log AND the MQTT wire.
 ---
 
-# hw-test — on-hardware bring-up & debug
+# hw-test — on-hardware acceptance & debug (oselia-only)
 
-The mechanics live in `tools/*.sh` (they encode the macOS/USB quirks). This skill
-is the judgment layer: pick the right script, interpret output, run the
-diagnose→fix→re-verify loop, and choreograph the human press-test. **Always run
-the host gate first** (`python3 -m py_compile src/*.py` and `tests/test_*.py`)
-before touching the board — never deploy code that fails it (CLAUDE.md).
+This skill drives a physical Hearth unit to a **per-criterion PASS/FAIL/BLOCKED verdict**
+against `docs/spec.md §10`, and doubles as the bring-up/debug loop. **All board and broker
+interaction goes through the `oselia` CLI** (see the `oselia-provision` skill). There is no
+`tools/*.sh` and no raw `mpremote`/`mosquitto_*` — if a step seems to need one, that's a
+signal to STOP (see Hard rules).
 
-## Test rig (see tools/_common.sh defaults; all env-overridable)
-- Board auto-detected via `mpremote connect list` (first MicroPython device).
-- Broker = this Mac, `192.168.1.104:1883`, no auth, Docker container `mosquitto`.
-- A local **Home Assistant** runs in Docker (`homeassistant`, `http://localhost:8123`,
-  2025.11). A long-lived token is at `~/.config/oselia/ha_token` (outside the repo).
-- `MCP_AUTODISCOVER=True` and only board1 `@0x20` is wired, so the firmware serves
-  **one** board: `…/board1/input1..16/action` topics (plus `diag/state`, `cfg`, and the
-  `…/cmd/#` command subscribe). With more boards wired it scales per board.
-- **The firmware publishes no HA MQTT discovery** — `watch.sh discovery` shows nothing and
-  no device auto-appears under HA's MQTT integration. The **OSELIA HACS integration** owns
-  the entities (installed in HA separately). Data/command topics (`…/action`, `…/cmd/#`,
-  `diag/state`) are what to watch; there are no discovery configs to inspect.
-- **Gestures need a physical 24 V switch press — you cannot actuate them.** Ask the
-  user to press, and watch. (For wiring-independent checks you can publish to the
-  action topic with `mosquitto_pub` to drive the HA `event` entity / a blueprint.)
+## Hard rules (do not violate)
 
-## Workflows
+1. **`oselia` only.** Never shell out to `mpremote`, `mosquitto_pub/sub`, or any script under
+   `tools/`. Board = `oselia board … / flash / provision / monitor`; broker = `oselia mqtt …`.
+2. **Missing capability → STOP.** If a step needs something `oselia` doesn't expose, STOP and
+   flag it (add it to the CLI in a separate change — see the `oselia-provision` skill's
+   "Extending"). Never hand-craft a one-off tool for a session.
+3. **No USB logs → STOP.** If `oselia monitor` can't stream the firmware log, STOP. Without
+   real logs you are guessing; guessing is not acceptance.
+4. **Prove new functionality with logs.** If the existing USB logs can't *prove* a behavior,
+   propose a concrete firmware debug-log addition (a diff) — don't infer that it "should work".
+5. **Dual proof.** A criterion PASSes only when confirmed on **both** the USB log **and** the
+   MQTT wire, and the two agree. One channel is never enough.
 
-**Deploy / bring-up**
-1. `tools/deploy.sh` — flashes `src/*.py`, verifies sizes, resets, settles.
-   - "Port busy" → tell the user to disconnect VS Code MicroPico / Thonny.
-   - Boot now takes a few seconds longer when DHCP is on (the firmware reads its
-     leased IP back from the CH9120 once at boot — `DHCP_LEASE_SETTLE_MS`).
-2. `tools/watch.sh status 10` — expect `online` (an `offline` first is the retained
-   LWT from the prior run; fine). After a fresh flash give it ~20–35 s: the boot is
-   longer and `diag/state`/`cfg` are retained, so an early read shows a **stale**
-   snapshot — wait for a low `uptime_s` before trusting it.
-3. `tools/watch.sh discovery 4 | grep -c config` — expect **0**: the firmware publishes
-   no `homeassistant/.../config` discovery (the OSELIA integration declares the entities).
+## Verdict taxonomy
 
-**Diagnostics / control / HA integration**
-- `tools/watch.sh diag 15` — the retained `diag/state` JSON.
-- HA registry check (no flashing): the device + entities live in HA — read them with
-  `curl -H "Authorization: Bearer $(cat ~/.config/oselia/ha_token)" http://localhost:8123/api/states`
-  and filter `*.hearth*` / `event.*`.
-- Control round-trips (drive via HA REST `button.press` / `number.set_value` /
-  `select.select_option`, or `mosquitto_pub` to `…/cmd/<name>`): Restart → board goes
-  `offline→online` with `uptime_s` reset; a `number` change updates `…/cfg` and
-  **survives a reboot** (clear the retained `cfg` first, then reboot, to prove it came
-  from `site.json`). Re-tuning never needs a reflash.
-- HA integration + dashboard: the OSELIA custom integration is installed in HA via HACS and
-  configured there (it owns the entities; the firmware publishes no MQTT discovery). The
-  dashboard is rendered locally with `oselia dashboard render --id <id>`
-  and pasted into HA — the host tool no longer pushes HA assets.
+- **PASS** — both USB-log and MQTT evidence gathered and they match the expectation.
+- **FAIL** — both proofs gathered, but they contradict the expectation (wrong gesture, no
+  `online`, HA discovery present when it must be absent, …).
+- **BLOCKED** — can't gather a required proof this run:
+  - rig/hardware absent (e.g. §12 needs a 2nd MCP chip wired),
+  - a proof channel doesn't exist yet → emit the proposed debug-log/`oselia` diff; never PASS
+    on one channel.
+- **STOP (abort run)** — host gate red, or Hard rule 2/3 tripped. Emit the partial report and
+  the blocking reason.
 
-**Gesture test (needs the user)**
-- `tools/watch.sh actions 45`, and ask the user to press input N: one short tap
-  (→`single`), two quick taps <`DOUBLE_GAP_MS` apart (→`double`), one >`LONG_MS`
-  hold (→`long`). Two `single`s instead of a `double` ⇒ raise `DOUBLE_GAP_MS` in
-  `config.py` (note the latency tradeoff), redeploy, re-test.
+## Modes
 
-**Broker-bounce reconnect regression**
-- `tools/bounce-test.sh` — exit 0 means the board self-healed `offline→online`.
-  A FAIL with `offline_seen=0` means it never noticed in time (raise `WATCH=`); a
-  FAIL ending `offline` means it's stuck — check `net_task.py` re-runs
-  `ch9120.bring_up()` on TCPCS-down (the known failure mode) and read serial.
+- **Default (change-scoped, PR gate):** read the diff (`git diff main…HEAD`), derive the new
+  behavior + the §10 criteria it touches, and prove only those.
+- **`--full` (release gate):** walk all 12 §10 criteria.
 
-**Serial / deep debug**
-- `tools/serial.sh 25` captures a fresh boot's logs. Note it leaves the board
-  **stopped** (it ran main() over the REPL) — finish with `tools/deploy.sh` or
-  `mpremote reset` to resume autorun. To read TCPCS directly:
-  `mpremote connect <port> exec "from machine import Pin; print(Pin(17,Pin.IN).value())"`
-  (0 = TCP connected, 1 = disconnected).
+## Preconditions (every run)
 
-## Debug loop
-On a hardware fault: reproduce with the relevant script → capture serial →
-localize in `src/` → fix → `py_compile` + host tests → `deploy.sh` → re-run the
-script to prove it. Mark hardware-confirmed assumptions with `# HW-VERIFY:` and
-keep the proven MQTT wire format in `mqtt_packets` intact.
+1. **Host gate first (hard):** `python3 -m py_compile src/*.py` and every `tests/test_*.py`
+   must pass. Red → STOP before touching the board (never deploy code that fails the gate).
+2. **Known baseline:** provision the unit to a clean, recorded state:
+   - `oselia flash` only if `oselia board version` ≠ the pinned interpreter.
+   - `oselia provision --broker <ip> [--acceptance]` → fresh `/slots/a`. Use `--acceptance`
+     to enable the §10/§11 fault-injection hooks (bench-only; production never carries them).
+   - Clear retained topics so a stale snapshot can't false-PASS:
+     `oselia mqtt pub hearth/<id>/status "" --retain` (and `…/cfg` if needed).
+   - Record `oselia board id`, `oselia board version`, `git rev-parse --short HEAD`,
+     `build=acceptance|production` into the report header.
+
+## The evidence matrix
+
+`acceptance-matrix.md` (next to this file) is the durable, versioned source of truth: each
+§10 criterion → the exact **USB-log** pattern, the exact **MQTT** assertion, and the `oselia`
+command(s) that gather each. Read it and drive each row. For *new* functionality not yet in
+the matrix, add a row following the same dual-proof rule (and propose the debug log if none
+proves it).
+
+**Retained-vs-live disambiguation:** `status`/`cfg`/`diag` are retained, so a watcher sees the
+*prior* run's value first (elapsed ≈ 0 in `oselia mqtt watch --json`). Only trust a message
+that arrives *after* your trigger, or whose `uptime_s`/timeline matches this run.
+
+## Core oselia commands
+
+- **USB log:** `oselia monitor --passive` (listen without restarting) or `oselia monitor`.
+- **Watch MQTT:** `oselia mqtt watch <topics…> --for N [--json] [--expect-absent REGEX]`.
+- **Publish / clear retained:** `oselia mqtt pub <topic> <payload> [--retain]`.
+- **Control command:** `oselia mqtt cmd <id> <name> [payload]` — real names: `reboot`,
+  `identify`, `long_ms`/`double_gap_ms`/`debounce_ms`, `log_level`; acceptance-only:
+  `_debug_stall` (§10), `_debug_mcp_fault <board>` (§11).
+- **Bounce broker (§8/§9):** `oselia mqtt bounce [--down N] [--container mosquitto]` (host
+  Docker; not a board action).
+
+## Running a criterion (the loop)
+
+For each matrix row: start `oselia monitor --passive` (capture USB) and `oselia mqtt watch`
+in parallel → apply the trigger via `oselia` (or, for §4/§5/§9, prompt the operator) → assert
+the USB pattern AND the MQTT assertion → record PASS/FAIL/BLOCKED + the two evidence lines.
+
+**Human-press criteria (§4/§5/§9)** need a physical 24 V switch press this skill can't
+actuate. Default run: **BLOCKED**, listing the exact manual steps. With `--interactive`:
+prompt the operator ("tap input 1 once", "hold input 1 >LONG_MS", for §9 "press input 2 during
+the outage I just triggered"), then verify USB+MQTT within a timeout; no press in time → BLOCKED.
+
+**Coverage on the single-board rig:** 1,2,3,7 automatable · 4,5,9 need `--interactive` ·
+8 via `mqtt bounce` · 10,11 via the `--acceptance` hooks · 6 static/host · **12 BLOCKED**
+until a 2nd MCP chip is wired.
+
+## Report
+
+Emit a Markdown verdict table (criteria as rows: verdict · USB evidence · MQTT evidence ·
+`oselia` command) to the session scratchpad, plus a console summary. Header = provenance
+(timestamp, `board id`, `version`, git SHA, `build`, broker, boards wired). Surface every
+HR4 log-proposal / HR2 `oselia` gap as a concrete diff in the report — **never auto-apply**.
+Change-scoped runs: **offer** to post the table as a PR comment (`gh pr comment`). The verdict
+is advisory — a human decides accept/reject. Nothing is committed by the run.
+
+## Debug loop (non-acceptance)
+
+On a hardware fault: reproduce via the relevant `oselia` command → capture USB with
+`oselia monitor` → localize in `src/` → fix → host gate → `oselia provision` → re-prove.
+Mark hardware-confirmed assumptions with `# HW-VERIFY:` and keep the proven MQTT wire format
+in `mqtt_packets` intact.

@@ -1,8 +1,9 @@
 # Flashing MicroPython on the RP2040-ETH
 
 The base interpreter is a one-time, physical (BOOTSEL) step — separate from deploying
-our app (`tools/deploy.sh` copies the `.py` files onto the already-flashed interpreter).
-Do this when you bring up a **new** RP2040-ETH board, or to update the interpreter.
+our app (`oselia provision` deploys the firmware into the OTA slot layout on the
+already-flashed interpreter). Do this when you bring up a **new** RP2040-ETH board, or to
+update the interpreter.
 
 > 💡 **The `oselia` tool automates this.** `oselia flash` (or `oselia provision`, which
 > checks the version first) reboots the board to BOOTSEL → copies the pinned UF2 → waits for
@@ -13,7 +14,7 @@ Do this when you bring up a **new** RP2040-ETH board, or to update the interpret
 
 > ⚠️ **Power:** on the `dib-monolith` board you must **never** have USB-C connected and
 > the **24 V supply on at the same time**. Switch the 24 V supply **OFF before** plugging
-> in USB (for flashing *and* for `deploy.sh`), and only switch it back on after USB is
+> in USB (for flashing *and* for `oselia provision`), and only switch it back on after USB is
 > unplugged. See `hardware.md` → "Powering the board".
 
 ## Which UF2
@@ -43,9 +44,10 @@ You need the board in **BOOTSEL** mode — it then mounts as a USB drive named `
 
 **Option A — software trigger (board already running MicroPython):**
 ```bash
-PORT=$(mpremote connect list | awk '/MicroPython/{print $1; exit}')
-mpremote connect "$PORT" exec "import machine; machine.bootloader()"   # reboots to BOOTSEL
+oselia flash        # reboots the running unit to BOOTSEL, copies the pinned UF2, waits for reboot
 ```
+(`oselia flash` does the BOOTSEL reboot + UF2 copy for you, watchdog-safe. Use Option B when
+the board is bare or won't break in.)
 
 **Option B — physical buttons (bare board, or when Option A can't break in):** the
 RP2040-ETH has **two** buttons, **BOOT** and **RESET**. The reliable sequence (per the
@@ -75,15 +77,12 @@ cp /tmp/RPI_PICO-v1.28.0.uf2 /Volumes/RPI-RP2/      # macOS; Linux: /media/<user
 ## After flashing
 
 ```bash
-./tools/deploy.sh                                   # re-copy src/*.py + config.py, reset
-
-# verify the interpreter + that the LED modules are present
-PORT=$(mpremote connect list | awk '/MicroPython/{print $1; exit}')
-mpremote connect "$PORT" exec "import sys; print(sys.implementation.version)"   # (1, 28, 0, '')
+oselia provision --broker <ip>     # write site.json + deploy the firmware into /slots/a, reset
+oselia board version               # verify the interpreter -> 1.28.0
 ```
 
 Then follow `bringup.md` from §2. The USB port re-enumerates after the flash (the serial
-device name may change); the `tools/` scripts auto-detect it.
+device name may change); `oselia` auto-detects it.
 
 ### Re-flashing a board that already has firmware (watchdog interplay)
 

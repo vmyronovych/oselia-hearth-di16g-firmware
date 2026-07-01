@@ -18,6 +18,13 @@ UF2_DIR = os.environ.get("OSELIA_UF2_DIR", os.path.join(PROVISIONING_DIR, "uf2")
 SRC_DIR = os.environ.get(
     "OSELIA_FIRMWARE_SRC", os.path.join(REPO_ROOT, "firmware", "src"))
 
+# The kept OTA pipeline scripts (bundle builder + publisher). `oselia ota …` fronts these
+# so the acceptance suite only ever calls `oselia`; the OTA logic + its host tests stay put.
+OTA_BUILD = os.environ.get(
+    "OSELIA_OTA_BUILD", os.path.join(REPO_ROOT, "firmware", "tools", "ota_build.py"))
+OTA_PUBLISH = os.environ.get(
+    "OSELIA_OTA_PUBLISH", os.path.join(REPO_ROOT, "firmware", "tools", "ota_publish.py"))
+
 # Brand logo embedded into the rendered dashboard YAML (optional; --no-logo skips it).
 LOGO_SVG = os.environ.get(
     "OSELIA_LOGO_SVG", os.path.join(REPO_ROOT, "homeassistant", "hearth_logo.svg"))

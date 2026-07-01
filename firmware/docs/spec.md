@@ -387,7 +387,7 @@ dib-gateway-fw/
 │   ├── clock.py             # wrap-safe monotonic ms (pure, tested)
 │   └── log.py               # leveled, rate-limited logger (serial + optional HA sink)
 ├── tests/                   # host-runnable (CPython): detector, led, queue, clock, mqtt, diag
-└── tools/                   # on-hardware flash/test/debug helpers (tools/README.md)
+└── tools/                   # OTA bundle build/publish pipeline (fronted by `oselia ota …`)
 ```
 
 The OSELIA custom integration lives in its own repo
@@ -413,7 +413,7 @@ Pure modules (no `machine`/`network` imports): `press_detector`, `debounce`,
   `machine`/`network`, just validates syntax).
 - **On-device smoke test**: configure the CH9120 as a TCP client, confirm the broker
   accepts the MQTT CONNECT (CONNACK) and the retained `…/status` goes `online`, publish a
-  manual test message, watch it in `mosquitto_sub`. (Liveness is the MQTT keepalive
+  manual test message, watch it with `oselia mqtt watch`. (Liveness is the MQTT keepalive
   PINGREQ/PINGRESP cycle — the `TCPCS` GPIO is not used.)
 - **HA integration test**: confirm the device appears under Settings → Devices with
   its inputs (as `event` entities and/or automation triggers), the diagnostic

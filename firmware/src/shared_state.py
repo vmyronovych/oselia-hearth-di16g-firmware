@@ -62,6 +62,22 @@ class SharedState:
         self.event_version = 0            # bumped on each new fault -> publish diag/event
         self.last_fault = None            # the latest fault record (for diag/event)
         self.reset_cause = "unknown"      # set once at boot from machine.reset_cause()
+        self._debug_fault = None          # (board, count) one-shot MCP fault injection
+                                          # (acceptance hooks only; core1 sets, core0 takes)
+
+    # ---- acceptance fault injection (cfg.ACCEPTANCE_HOOKS only) ----
+    def request_debug_fault(self, board, count):
+        """core1 (a _debug_mcp_fault command) asks core0 to force `count` failed reads on
+        `board`, driving the existing MCP fail->recovery path so §11 is provable."""
+        with self._lock:
+            self._debug_fault = (board, count)
+
+    def take_debug_fault(self):
+        """core0 consumes any pending injection request (one-shot). -> (board, count) or None."""
+        with self._lock:
+            df = self._debug_fault
+            self._debug_fault = None
+            return df
 
     def set_mcp(self, ok):
         with self._lock:

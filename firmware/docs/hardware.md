@@ -55,7 +55,7 @@ The board's regulated **3V3 rail feeds the module's `VSYS`** pin (see the table 
 → `VSYS`/3V3). So with **both** USB and the 24 V→3V3 supply live, two sources fight on the
 `VSYS`/3V3 net — which is why the board can't run on USB and field power simultaneously.
 
-Practical rule for any USB work (flashing, `deploy.sh`, provisioning, serial logs):
+Practical rule for any USB work (`oselia flash` / `oselia provision` / `oselia monitor`):
 
 1. Switch the **24 V supply OFF**.
 2. Connect USB-C and do the work (the module runs fine on USB power alone).

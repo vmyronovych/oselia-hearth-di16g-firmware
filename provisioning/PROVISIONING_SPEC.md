@@ -340,7 +340,7 @@ If no board enumerates, the mode prints a **wedge-aware** message (BOOTSEL = mas
 re-flash with `oselia flash`) rather than the generic "not plugged in". Lines are colourised
 by the firmware's level prefix (`[E]`/`[W]`/`[D]` from `src/log.py`; INFO is left plain) on a
 colour-capable TTY (honours `NO_COLOR`). Note: diagnostics *telemetry* proper
-(`…/diag/state`) is an **MQTT** feed (§5.2 / `firmware/tools/watch.sh`); this mode surfaces
+(`…/diag/state`) is an **MQTT** feed (§5.2 / `oselia mqtt watch`); this mode surfaces
 the **serial** log + boot diagnostics over USB instead.
 
 ## 7. Failure modes the wizard must handle gracefully

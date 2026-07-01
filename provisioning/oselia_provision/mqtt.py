@@ -212,6 +212,63 @@ def clear_retained_status(ip, port, user, password, base_topic, device_id):
         _disconnect(sock)
 
 
+def watch(ip, port, user, password, topics, duration=10.0, on_message=None):
+    """Subscribe to `topics` and collect PUBLISHes for `duration` seconds. NETWORK-only
+    (never touches USB, so a running unit's own MQTT session stays alive). Returns a list
+    of (topic, payload_bytes, elapsed_s). Retained messages arrive first (elapsed ~0); the
+    caller disambiguates retained-vs-live by elapsed time / correlation with a trigger.
+
+    keepalive=0 so the broker never drops this read-only watcher for inactivity."""
+    start = time.time()
+    deadline = start + duration
+    out = []
+    try:
+        sock = socket.create_connection((ip, port), timeout=5.0)
+    except OSError:
+        return out
+    try:
+        sock.settimeout(1.0)
+        sock.sendall(build_connect("oselia-watch", keepalive=0, user=user, password=password))
+        if (_read_packet(sock) or (None,))[0] != 0x20:
+            return out
+        for i, t in enumerate(topics, 1):
+            sock.sendall(build_subscribe(i, t))
+        while time.time() < deadline:
+            pkt = _read_packet(sock)
+            if pkt is None:
+                continue
+            if pkt[0] & 0xF0 == 0x30:            # PUBLISH (QoS0 -> no packet id)
+                ptopic, payload = _split_publish(pkt[1])
+                elapsed = time.time() - start
+                out.append((ptopic, payload, elapsed))
+                if on_message:
+                    on_message(ptopic, payload, elapsed)
+        return out
+    finally:
+        _disconnect(sock)
+
+
+def publish(ip, port, user, password, topic, payload=b"", retain=False):
+    """Publish an arbitrary topic/payload (QoS0). Generalises send_command for the
+    acceptance suite (drive a `…/cmd/*`, seed/clear a retained topic). -> ok bool."""
+    if isinstance(payload, str):
+        payload = payload.encode()
+    try:
+        sock = socket.create_connection((ip, port), timeout=5.0)
+    except OSError:
+        return False
+    try:
+        sock.settimeout(5.0)
+        sock.sendall(build_connect("oselia-pub", user=user, password=password))
+        if _read_packet(sock) is None:
+            return False
+        sock.sendall(build_publish(topic, payload, retain=retain))
+        time.sleep(0.3)
+        return True
+    finally:
+        _disconnect(sock)
+
+
 def probe_broker(host):
     """(host, 1883) if it speaks MQTT (TCP open + a CONNACK to our CONNECT), else None."""
     try:
