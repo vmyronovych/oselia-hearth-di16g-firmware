@@ -8,8 +8,9 @@ the wire format. When this and any other doc disagree on the wire, **this file w
 
 ## Topic derivation
 
-All topics derive from a configurable base. Prefixes come from `config.py`: `BASE_TOPIC`
-(default `hearth`) and `DISCOVERY_PREFIX` (default `homeassistant`).
+All topics derive from a configurable base. The prefix comes from `config.py`:
+`BASE_TOPIC` (default `hearth`). The firmware publishes **no** `homeassistant/.../config`
+HA-discovery topics — the OSELIA integration declares every entity itself.
 
 - `base = <BASE_TOPIC>/<device_id>`, e.g. `hearth/AABBCC`.
 - `<device_id>` = stable id from the RP2040 unique ID (last 6 hex), or `DEVICE_ID` from
@@ -34,62 +35,24 @@ All topics derive from a configurable base. Prefixes come from `config.py`: `BAS
 | `…/cmd/log_level` | HA→dev | no | `ERROR`/`WARN`/`INFO`/`DEBUG` | `select` (config) |
 | `…/ota/cmd` | HA→dev | no | OTA command JSON ([below](#ota-topics)) | (driven by the `update` entity) |
 | `…/ota/state` | dev→HA | yes | `{stage,percent,running_version,target_version,error}` | `update` entity progress/state |
-| `<DISCOVERY_PREFIX>/<component>/<id>/…/config` | dev→HA | yes | discovery JSON ([below](#discovery)) | registers all of the above |
 
 - LWT (`…/status` → `offline`) is registered in CONNECT so HA marks the device
   unavailable on disconnect.
-- `<component>` covers `device_automation` (triggers), `event` (per-input), `sensor` /
-  `binary_sensor` (diagnostics + Last log), `button` (restart/identify), `number`
-  (timings), `select` (log level), `update` (OTA).
+- The firmware publishes **no** `homeassistant/.../config` discovery; the OSELIA
+  integration declares each entity (`event` per input, diagnostics `sensor`/`binary_sensor`,
+  `button`, `number`, `select`, `update`) and binds it to the topics above.
 
-## Discovery
+## Input actions
 
-One config message per **(board × pin × gesture)** = `n_boards × 16 × 3` (up to
-**8 × 16 × 3 = 384** at the 8-board max; e.g. 48 for one board), published with a small
-inter-message settle so the CH9120 keeps up. All discovery configs are **retained** so HA
-repopulates after a restart.
+Each classified press is published (non-retained) to `…/board<b>/input<p>/action` with a
+plain gesture payload. The OSELIA integration renders one `event` entity per input from
+these topics.
 
-**Device-automation trigger** — example for board 2, pin 5, single press:
-
-```json
-{
-  "automation_type": "trigger",
-  "type": "button_short_press",
-  "subtype": "board2_input5",
-  "topic": "hearth/AABBCC/board2/input5/action",
-  "payload": "single",
-  "device": {
-    "identifiers": ["hearth_AABBCC"],
-    "name": "Hearth", "model": "Hearth (DI16-G)",
-    "manufacturer": "OSELIA", "sw_version": "0.1.0"
-  }
-}
-```
-
-Gesture → HA trigger `type` / `payload`:
-
-| Gesture | `type` | `payload` |
-|---------|--------|-----------|
-| single  | `button_short_press`  | `single` |
-| double  | `button_double_press` | `double` |
-| long    | `button_long_press`   | `long`   |
-
-`subtype` = `board<b>_input<p>` (overridable via `INPUT_NAME_OVERRIDES`).
-
-**`event` entities (`INPUT_DISCOVERY`)** — each input can also (or instead) publish a
-modern HA **`event` entity** (`<DISCOVERY_PREFIX>/event/<id>/b<b>_in<p>/config`,
-`device_class: button`, `event_types: [single, double, long]`), reusing the same
-non-retained action topic with a `value_template` that wraps the plain payload into
-`{"event_type": …}`. `INPUT_DISCOVERY` = `event` / `trigger` / `both` (default `both`).
-The shipped blueprint (`homeassistant/blueprints/.../dib_switch.yaml`) targets the event
-entities.
-
-Every config carries an `origin` block and an enriched `device` (`hw_version`,
-`serial_number`); diagnostic entities set `expire_after = 3 × DIAG_INTERVAL_S`.
-
-**Device identity for `device_info`:** `manufacturer=OSELIA`, `model="Hearth (DI16-G)"`,
-`hw_version`, `serial_number=<device_id>`, `sw_version` from `diag/state.fw`,
-`configuration_url` → the gateway IP from `diag/state.ip`.
+| Gesture | `…/action` payload |
+|---------|--------------------|
+| single  | `single` |
+| double  | `double` |
+| long    | `long`   |
 
 ## `diag/state` schema
 

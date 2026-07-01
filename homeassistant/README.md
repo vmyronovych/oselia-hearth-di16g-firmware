@@ -3,13 +3,13 @@
 The gateway is consumed in Home Assistant by the first-party **OSELIA custom integration**
 (its own repo, **[vmyronovych/oselia-hearth-di16g-ha](https://github.com/vmyronovych/oselia-hearth-di16g-ha)**,
 HACS-installable). It owns the device + entities (so the gateway appears under OSELIA) and
-adds a native firmware `update` (OTA) entity. The firmware default (`HA_INTEGRATION =
-"oselia"`) **skips** publishing MQTT discovery; the `oselia` provisioning tool always
-provisions this mode. Design contract: `INTEGRATION_SPEC.md`.
+adds a native firmware `update` (OTA) entity. The firmware publishes **no** HA MQTT
+discovery — the integration declares every entity itself from the data/command topics.
+Design contract: `INTEGRATION_SPEC.md`.
 
-> A legacy `"mqtt"` mode (firmware publishes HA MQTT discovery; device appears under HA's
-> MQTT integration) still exists in the firmware for a hand-set `site.json`, but the tool no
-> longer provisions it.
+> The legacy `"mqtt"` mode (firmware-published HA MQTT discovery) was **removed** from the
+> firmware. The `oselia` tool still writes `"ha_integration": "oselia"` into `site.json` so a
+> board carrying *older* firmware (which defaulted to `"mqtt"`) is forced out of discovery.
 
 ## What the integration registers
 

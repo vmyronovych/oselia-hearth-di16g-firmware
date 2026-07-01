@@ -67,16 +67,11 @@ def test_overlay_diag_disable():
     assert cfg.DIAG_ENABLE is False
 
 
-def test_overlay_ha_integration_defaults_oselia():
-    # No "ha_integration" key -> firmware default ("oselia": skip MQTT discovery).
-    cfg = _load_config_with({"broker_ip": "10.0.0.1"})
-    assert cfg.HA_INTEGRATION == "oselia", cfg.HA_INTEGRATION
-
-
-def test_overlay_ha_integration_mqtt_legacy():
-    # A hand-set legacy "mqtt" override still works (publish HA discovery).
+def test_overlay_ignores_ha_integration_key():
+    # The firmware no longer reads "ha_integration" (the MQTT-discovery path was removed);
+    # an overlay carrying it is simply ignored rather than defining the attribute.
     cfg = _load_config_with({"broker_ip": "10.0.0.1", "ha_integration": "mqtt"})
-    assert cfg.HA_INTEGRATION == "mqtt"
+    assert not hasattr(cfg, "HA_INTEGRATION")
 
 
 def test_overlay_persisted_tunables():
@@ -108,15 +103,6 @@ def test_overlay_static_forces_static_ip():
     assert cfg.LOCAL_IP == (10, 0, 0, 50)
     assert cfg.GATEWAY == (10, 0, 0, 1)
     assert cfg.SUBNET_MASK == (255, 255, 255, 0)
-
-
-def test_overlay_name_rows_become_tuple_keyed_dict():
-    cfg = _load_config_with({
-        "broker_ip": "10.0.0.1",
-        "names": [[1, 1, "kitchen_main"], [2, 5, "garage_door"]],
-    })
-    assert cfg.INPUT_NAME_OVERRIDES[(1, 1)] == "kitchen_main"
-    assert cfg.INPUT_NAME_OVERRIDES[(2, 5)] == "garage_door"
 
 
 def test_no_site_json_keeps_defaults():

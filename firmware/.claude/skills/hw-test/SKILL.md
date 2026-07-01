@@ -3,7 +3,7 @@ name: hw-test
 description: >-
   Flash, test, and debug the RP2040-ETH switch firmware on the real board over
   mpremote + a local MQTT broker. Use when asked to flash/deploy to the board,
-  bring it up on hardware, watch MQTT discovery/action/availability topics, test
+  bring it up on hardware, watch MQTT action/availability/diag topics, test
   gestures, run the broker-bounce reconnect regression, or capture board serial
   logs. Orchestrates the deterministic helpers in tools/.
 ---
@@ -21,17 +21,13 @@ before touching the board — never deploy code that fails it (CLAUDE.md).
 - Broker = this Mac, `192.168.1.104:1883`, no auth, Docker container `mosquitto`.
 - A local **Home Assistant** runs in Docker (`homeassistant`, `http://localhost:8123`,
   2025.11). A long-lived token is at `~/.config/oselia/ha_token` (outside the repo).
-- `MCP_AUTODISCOVER=True` and only board1 `@0x20` is wired, so when discovery is on the
-  firmware advertises **one** board: 48 device_automation configs (16×3) + 16 `event`
-  entities + the diagnostics/control entities (sensor/binary_sensor/button/number/select).
-  With more boards wired it scales 16×3 (+16 events) per board.
-- **`HA_INTEGRATION` defaults to `"oselia"`**, so a freshly flashed dev board (no
-  `site.json`) **skips publishing MQTT discovery** — `watch.sh discovery` shows nothing and
-  no device auto-appears under HA's MQTT integration (the OSELIA HACS integration owns the
-  entities instead). To bench-test the legacy MQTT-discovery path, set `HA_INTEGRATION =
-  "mqtt"` in `config.py` (or write `{"ha_integration":"mqtt"}` into the board's `site.json`)
-  before deploying. Data/command topics (`…/action`, `…/cmd/#`, `diag/state`) are identical
-  in both modes, so gesture/diag/control tests don't need discovery.
+- `MCP_AUTODISCOVER=True` and only board1 `@0x20` is wired, so the firmware serves
+  **one** board: `…/board1/input1..16/action` topics (plus `diag/state`, `cfg`, and the
+  `…/cmd/#` command subscribe). With more boards wired it scales per board.
+- **The firmware publishes no HA MQTT discovery** — `watch.sh discovery` shows nothing and
+  no device auto-appears under HA's MQTT integration. The **OSELIA HACS integration** owns
+  the entities (installed in HA separately). Data/command topics (`…/action`, `…/cmd/#`,
+  `diag/state`) are what to watch; there are no discovery configs to inspect.
 - **Gestures need a physical 24 V switch press — you cannot actuate them.** Ask the
   user to press, and watch. (For wiring-independent checks you can publish to the
   action topic with `mosquitto_pub` to drive the HA `event` entity / a blueprint.)
@@ -47,12 +43,11 @@ before touching the board — never deploy code that fails it (CLAUDE.md).
    LWT from the prior run; fine). After a fresh flash give it ~20–35 s: the boot is
    longer and `diag/state`/`cfg` are retained, so an early read shows a **stale**
    snapshot — wait for a low `uptime_s` before trusting it.
-3. `tools/watch.sh discovery 4 | grep -c config` — expect **16×3 per advertised
-   board** (48 on the single-board rig), *plus* the `event`/diagnostic/control configs
-   under `homeassistant/{event,sensor,binary_sensor,button,number,select}/<id>/…`.
+3. `tools/watch.sh discovery 4 | grep -c config` — expect **0**: the firmware publishes
+   no `homeassistant/.../config` discovery (the OSELIA integration declares the entities).
 
 **Diagnostics / control / HA integration**
-- `tools/watch.sh diag 15` — the retained `diag/state` JSON + the diag entity configs.
+- `tools/watch.sh diag 15` — the retained `diag/state` JSON.
 - HA registry check (no flashing): the device + entities live in HA — read them with
   `curl -H "Authorization: Bearer $(cat ~/.config/oselia/ha_token)" http://localhost:8123/api/states`
   and filter `*.hearth*` / `event.*`.
@@ -62,8 +57,8 @@ before touching the board — never deploy code that fails it (CLAUDE.md).
   **survives a reboot** (clear the retained `cfg` first, then reboot, to prove it came
   from `site.json`). Re-tuning never needs a reflash.
 - HA integration + dashboard: the OSELIA custom integration is installed in HA via HACS and
-  configured there (it owns the entities; the firmware skips MQTT discovery in the default
-  `oselia` mode). The dashboard is rendered locally with `oselia dashboard render --id <id>`
+  configured there (it owns the entities; the firmware publishes no MQTT discovery). The
+  dashboard is rendered locally with `oselia dashboard render --id <id>`
   and pasted into HA — the host tool no longer pushes HA assets.
 
 **Gesture test (needs the user)**

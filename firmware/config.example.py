@@ -91,32 +91,13 @@ DOUBLE_GAP_MS = 0              # double-tap window, ms. >0 = single-press latenc
 # DEVICE_ID is normally derived from machine.unique_id() at runtime; this is a
 # fallback / override.
 DEVICE_ID = None               # None -> derive from unique_id() last 6 hex
-DEVICE_NAME = "Hearth"
-DEVICE_MODEL = "Hearth (DI16-G)"
-DEVICE_MANUFACTURER = "OSELIA"
 SW_VERSION = "0.6.0"
-HW_VERSION = "DI16-G"                   # board model (shown as Hardware in HA)
-PROJECT_URL = "https://github.com/vmyronovych/oselia-hearth-di16g-firmware"  # HA discovery origin
+HW_VERSION = "DI16-G"                   # board model (reported in diag/state)
 
 BASE_TOPIC = "hearth"             # -> hearth/<device_id>/...
-DISCOVERY_PREFIX = "homeassistant"     # HA default
-
-# How inputs appear in HA: "event" (modern entity per input; shows in dashboards &
-# logbook, and what the shipped blueprint targets), "trigger" (device_automation
-# triggers, the original), or "both". "both" doubles discovery traffic on connect.
-INPUT_DISCOVERY = "both"
-
-# Which HA integration consumes this device: "oselia" (the first-party OSELIA custom
-# integration owns the entities; firmware skips publishing discovery -- the DEFAULT) or
-# "mqtt" (legacy: firmware publishes HA MQTT discovery; device shows under the MQTT
-# integration). Data/command topics are identical either way. The host tool always
-# provisions "oselia". See homeassistant/INTEGRATION_SPEC.md.
-HA_INTEGRATION = "oselia"
-
-# Friendly-name overrides keyed by (board, pin), both 1-based (pin 1..16).
-# Anything not listed defaults to "board<b>_input<p>". Example:
-#   INPUT_NAME_OVERRIDES = {(1, 1): "kitchen_main", (2, 5): "garage_door"}
-INPUT_NAME_OVERRIDES = {}
+# The first-party OSELIA HA integration declares every entity itself, so the firmware
+# publishes NO HA MQTT-discovery configs -- only the data + command topics under
+# BASE_TOPIC. See homeassistant/INTEGRATION_SPEC.md.
 
 # ---------------------------------------------------------------------------
 # Robustness / dual-core (industrial-grade)
@@ -137,7 +118,6 @@ MQTT_CONNECT_TIMEOUT_MS = 4000     # wait for CONNACK
 PING_RESPONSE_TIMEOUT_MS = 5000    # no PINGRESP within this -> treat link dead
 RECONNECT_BACKOFF_MIN_MS = 1000    # first retry delay
 RECONNECT_BACKOFF_MAX_MS = 30000   # cap
-DISCOVERY_REPUBLISH_ON_RECONNECT = True
 
 # I2C resilience
 I2C_RETRIES = 3                # retry count for MCP reads/writes

@@ -5,8 +5,9 @@
 Firmware (MicroPython) for a Waveshare **RP2040-ETH** board that reads 16 isolated
 24 V digital inputs (wall switches) through an **MCP23017** I²C port expander,
 classifies each press as **single / double / long**, and publishes the result to an
-MQTT broker in a **Home Assistant**–compatible way using **MQTT Discovery
-`device_automation` triggers**.
+MQTT broker. The first-party **OSELIA** Home Assistant integration
+(`vmyronovych/oselia-hearth-di16g-ha`) declares the HA entities from these topics; the
+firmware itself publishes **no** HA MQTT-discovery configs.
 
 This document is the contract. The firmware is correct when it satisfies the
 Acceptance Criteria in §10.
@@ -94,8 +95,8 @@ more than ~2 chips). All values live in `config.py`.
    state machine.
 6. When a gesture completes (single / double / long), it is queued to core 1 and
    published to that input's **action topic** (`…/board<b>/input<p>/action`).
-7. Home Assistant, having ingested the discovery configs, fires the matching
-   device-automation trigger.
+7. Home Assistant, via the OSELIA integration's input entity, fires on the matching
+   gesture.
 
 ### 3.1 Why a continuous loop (not pure interrupt)
 
@@ -167,31 +168,30 @@ Implications baked into the design:
 
 ## 5. MQTT contract
 
-> **The canonical wire contract — every topic, payload, discovery config, and the
+> **The canonical wire contract — every topic, payload, and the
 > `diag/state` schema — lives in [`mqtt-contract.md`](mqtt-contract.md).** This section
 > covers *how the firmware builds and gates* those messages; for the on-the-wire tables,
 > read the contract.
 
-Topics derive from a configurable base (`BASE_TOPIC`/`DISCOVERY_PREFIX` in `config.py`);
+Topics derive from a configurable base (`BASE_TOPIC` in `config.py`);
 `base = hearth/<device_id>`, `<b>` = board `1..8`, `<p>` = pin `1..16`. All inputs belong
-to **one** HA device. LWT (`…/status` → `offline`) is registered in CONNECT.
+to **one** HA device (declared by the OSELIA integration). LWT (`…/status` → `offline`)
+is registered in CONNECT.
 
-### 5.1 Discovery (triggers + `event` entities)
+### 5.1 Input publishing (action topics)
 
-One config message per **(board × pin × gesture)** = `n_boards × 16 × 3` (up to
-**8 × 16 × 3 = 384**; 48 for one board), published with a small inter-message settle so
-the CH9120 keeps up, and **retained** so HA repopulates after a restart. Only *advertised*
-boards count (with `MCP_AUTODISCOVER`, the chips that responded). Each input publishes a
-device-automation **trigger** and/or a modern **`event` entity** — `INPUT_DISCOVERY` =
-`event`/`trigger`/`both` (default `both`). Payload shapes, the gesture→`type` mapping, and
-the `event`-entity `value_template` are in [`mqtt-contract.md`](mqtt-contract.md#discovery).
-HA-verified: entities register and fire with the correct `event_type`.
+Each classified press is published to `hearth/<id>/board<b>/input<p>/action` with the
+plain `single`/`double`/`long` payload (non-retained). The **OSELIA integration** declares
+one HA entity per input from these topics; the firmware publishes **no**
+`homeassistant/.../config` discovery. Payload shapes are in
+[`mqtt-contract.md`](mqtt-contract.md#input-actions). HA-verified: entities fire with the
+correct gesture.
 
 ### 5.2 Diagnostics telemetry (optional, `DIAG_ENABLE`)
 
-A small **retained** JSON snapshot published to `hearth/<device_id>/diag/state`
-plus a handful of HA-discovery **diagnostic entities** (`entity_category:
-diagnostic`) attached to the same device, so the customer sees basic operating
+A small **retained** JSON snapshot published to `hearth/<device_id>/diag/state`.
+The OSELIA integration renders it as a handful of **diagnostic entities**
+(`entity_category: diagnostic`) on the same device, so the customer sees basic operating
 parameters in the Home Assistant app with no extra service. Built in `diag.py`
 (pure builders), published by core 1.
 
@@ -229,10 +229,8 @@ The single CH9120 TCP pipe is shared, so the publish is gated in `net_task` to t
 (`len(queue) == 0`), at most every `DIAG_INTERVAL_S`, as one small fire-and-forget
 (QoS0) retained message — so it can never sit in front of a queued gesture. The
 state snapshot is taken from `SharedState.health()` (under the lock) and
-`json.dumps`'d **outside** the lock. Discovery for the diagnostic entities is
-published once per connect, after the action discovery (the queue buffers presses
-through that one-time burst, as it already does for the `n_boards × 16 × 3` action
-configs).
+`json.dumps`'d **outside** the lock. No discovery is published — the OSELIA
+integration already owns the diagnostic entities.
 
 `DIAG_ENABLE` is a per-install toggle: the provisioning tool writes `"diag":
 false` into `site.json` (`oselia provision --no-diag`) and the config overlay turns the
@@ -241,19 +239,16 @@ whole feature off — no `diag/state` publishes and no diagnostic entities.
 **Log mirror.** WARN/ERROR log lines are also surfaced in HA: `log.set_sink` stashes
 the last such line (callable from either core — a bare slot write), and core 1
 publishes it (retained, **queue-gated** like everything else) to
-`hearth/<id>/diag/log` as `{"line","level","ts"}`, rendered by a **"Last log"**
-diagnostic sensor. Event-driven, so no `expire_after` (the last line persists).
-
-**Native-feel discovery.** Every config (triggers + diagnostics) carries an `origin`
-block and an enriched `device` (adds `hw_version`, `serial_number`); diagnostic
-entities set `expire_after = 3 × DIAG_INTERVAL_S` so they go *unavailable* if the
-board wedges and telemetry stops.
+`hearth/<id>/diag/log` as `{"line","level","ts"}`, which the OSELIA integration renders
+as a **"Last log"** diagnostic sensor. Event-driven, so no `expire_after` (the last line
+persists).
 
 ### 5.3 Two-way control (`CONTROL_ENABLE`)
 
 The firmware also **subscribes** (the CH9120 transparent stream is bidirectional):
 on each connect it subscribes to `hearth/<id>/cmd/#` (clean-session, so it
-re-subscribes every reconnect) and publishes HA **`button`** entities:
+re-subscribes every reconnect). The OSELIA integration declares the matching HA
+**`button`** entities:
 
 | Button | Command topic | Action |
 |--------|---------------|--------|
@@ -435,8 +430,8 @@ Pure modules (no `machine`/`network` imports): `press_detector`, `debounce`,
 1. Board boots, configures CH9120 as TCP client to the broker IP:port, and
    `TCPCS` reads LOW (connected).
 2. MQTT CONNECT succeeds with LWT; `…/status` shows `online` (retained).
-3. All 48 discovery configs are published (retained); HA shows one device with 16
-   inputs and short/double/long triggers each.
+3. The OSELIA integration (installed in HA) shows one device with 16 input entities;
+   the firmware publishes **no** `homeassistant/.../config` discovery.
 4. Pressing a wall switch produces exactly one gesture event with correct
    classification:
    - quick tap → `single`
@@ -447,8 +442,8 @@ Pure modules (no `machine`/`network` imports): `press_detector`, `debounce`,
 7. Host unit tests pass (detector, debounce, LED, queue, clock, MQTT packets) and
    all `src/*.py` pass `py_compile`.
 8. On network drop, firmware detects it (keepalive/PINGRESP) and reconnects with
-   backoff without a manual reset; availability returns to `online` and discovery
-   is republished.
+   backoff without a manual reset; availability returns to `online` and the command
+   subscriptions + `cfg` seed are re-sent.
 9. While the network task is busy reconnecting, **input timing is unaffected**:
    gestures are still classified correctly and buffered in the queue, then flushed
    on reconnect.
@@ -469,7 +464,7 @@ timings (400/300 ms).
 
 Confirmed on the **manufactured board** (this hardware, 2026-06): MCP23017 detected on
 the re-routed bus (**I2C1 GP26/27**, INT **GP22**, `/RESET` **GP9**); MQTT online +
-retained discovery configs publishing; status LED working — WS2812 on **GP25**, **RGB**
+retained availability/state publishing; status LED working — WS2812 on **GP25**, **RGB**
 wire order (GRB shows green-as-red here), driven via PIO. Interpreter pinned to
 MicroPython **1.28.0** (`flashing.md`).
 
@@ -484,7 +479,7 @@ Still to confirm:
 - **Reconnect behaviour**: the POC is fire-and-forget (no CONNACK/LWT). Confirm the
   CH9120 auto-reconnects the TCP session and that re-issuing CONNECT works.
 - **DEBOUNCE_MS** feel given the hardware RC stage (start at 25 ms).
-- HA **device_automation** trigger rendering end-to-end (the POC used binary_sensor).
+- HA input-entity rendering end-to-end via the **OSELIA** integration (the POC used binary_sensor).
 - **Shared wired-OR INT** across multiple chips (POC was single-chip): confirm the
   open-drain INT + pull-up behave, and that reading all chips on each INT reliably
   releases the line. I²C bus integrity with up to 8 chips (pull-up sizing, lengths).
@@ -524,8 +519,8 @@ Still to confirm:
   error codes, and `bus_recoveries`/`mcp_resets` counters are surfaced in `diag/state` +
   `diag/event` (§5.2). Pure decision logic lives in host-tested `mcp_health.py`.
 - **Reconnect with exponential backoff** (`RECONNECT_BACKOFF_MIN/MAX_MS`), LWT
-  (`offline`), availability `online`, and discovery republish on reconnect. Backoff
-  waits are chunked so the heartbeat keeps ticking during them.
+  (`offline`), availability `online`, and command re-subscribe + `cfg` re-seed on
+  reconnect (clean session). Backoff waits are chunked so the heartbeat keeps ticking.
 - **MQTT liveness**: PINGREQ at ~70% of keepalive; if no PINGRESP within
   `PING_RESPONSE_TIMEOUT_MS`, the session is declared dead and rebuilt. CONNACK
   return code is validated.
