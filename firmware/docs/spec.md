@@ -365,9 +365,9 @@ hardware.
 ```
 dib-gateway-fw/
 ├── README.md / CLAUDE.md    # front door + agent working agreement (stay at root)
-├── UPGRADING.md             # end-user upgrade guide (published; linked from releases)
 ├── docs/                    # spec.md, hardware.md, mqtt-contract.md, ota.md,
-│                            #   flashing.md, bringup.md, releasing.md, + pinout image
+│                            #   flashing.md, bringup.md, releasing.md, upgrading.md,
+│                            #   + pinout image
 ├── config.example.py        # copy to config.py and edit
 ├── src/
 │   ├── main.py              # orchestrator: spawn core1, run core0, validate config

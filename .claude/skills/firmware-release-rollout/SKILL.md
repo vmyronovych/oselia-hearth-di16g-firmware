@@ -58,7 +58,7 @@ The rollout section the user receives **must**:
 3. Contain, in each block: (a) the release's **plain-language problem + outcome** in that
    language (what gets better for the user, no jargon), then (b) a **link to `UPGRADING.md`**
    for how to apply. The how-to-apply *steps* are not repeated in the note — they live in
-   the canonical `firmware/UPGRADING.md`. **Every release note and PR body must carry this
+   the canonical `firmware/docs/upgrading.md`. **Every release note and PR body must carry this
    link.**
 4. Be followed by a `## Technical details` section (summary of changes + verification) for
    engineers — never above the consumer blocks.
@@ -83,11 +83,11 @@ When the diff (PR) or the release contents (since the previous tag) ship new fir
      release workflow (`firmware-release.yml`) currently runs `--generate-notes`; add the
      rollout block on top via `gh release edit` after it publishes.
 3. If the release changes *how updates work* (not just this fix), update
-   **`firmware/UPGRADING.md`** too — it is the single source of the apply steps every
+   **`firmware/docs/upgrading.md`** too — it is the single source of the apply steps every
    release links to.
 
 ## Keep it consistent
 
 `rollout-snippet.md` is the single source of the user-facing wording — edit it there, not
 inline, so PR bodies and release notes never drift. This mirrors `firmware/docs/releasing.md`
-(release-engineer-facing) and `firmware/UPGRADING.md` (end-user-facing).
+(release-engineer-facing) and `firmware/docs/upgrading.md` (end-user-facing).

@@ -2,13 +2,12 @@
 
 Reference material for the Hearth firmware. The front door is
 [`../README.md`](../README.md); the agent working agreement is
-[`../CLAUDE.md`](../CLAUDE.md); the end-user upgrade guide is
-[`../UPGRADING.md`](../UPGRADING.md) (kept at the firmware root because releases link to
-it by a stable URL).
+[`../CLAUDE.md`](../CLAUDE.md).
 
 | Doc | What's in it |
 |-----|--------------|
 | [`spec.md`](spec.md) | The full specification / contract — read this first. Behaviour, concurrency model, acceptance criteria, HW-verify items. |
+| [`upgrading.md`](upgrading.md) | End-user upgrade guide (bilingual UA/EN). **Every release links here** — keep the apply steps in this one file. |
 | [`hardware.md`](hardware.md) | Single home for wiring **and** device init: pin map + powering rules + confirmed CH9120 / MCP23017 / press-detection facts + POC provenance. |
 | [`mqtt-contract.md`](mqtt-contract.md) | Canonical wire contract: topics, discovery configs, `diag/state` schema, error taxonomy, OTA topics. The firmware owns it; HA links here. |
 | [`ota.md`](ota.md) | OTA mechanism: A/B slots, thin loader, boot-confirm / auto-revert state machine. |

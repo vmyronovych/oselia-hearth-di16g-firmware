@@ -32,7 +32,7 @@ and log level). See `docs/spec.md §5`.
 - `docs/flashing.md` — which MicroPython UF2 to flash on a new RP2040-ETH, and how.
 - `docs/bringup.md` — bench bring-up checklist (the physical/HA steps scripts can't do).
 - `docs/releasing.md` — cut a firmware release (GitHub → HA OTA feed).
-- `UPGRADING.md` — end-user upgrade guide (bilingual; linked from every release).
+- `docs/upgrading.md` — end-user upgrade guide (bilingual; linked from every release).
 - `tools/` — on-hardware flash/test/debug scripts (`tools/README.md`).
 - `.claude/skills/hw-test/` — project skill that orchestrates those scripts (see below).
 - `.claude/agents/hw-runner.md` — cheap (Sonnet) runner subagent for the green path (see below).
