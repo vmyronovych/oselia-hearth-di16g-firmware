@@ -73,9 +73,32 @@ proves it).
 *prior* run's value first (elapsed ≈ 0 in `oselia mqtt watch --json`). Only trust a message
 that arrives *after* your trigger, or whose `uptime_s`/timeline matches this run.
 
+**§3 discovery — do NOT naively `--expect-absent` on `homeassistant/#`.** Old firmware (and
+other/foreign device ids) leave **retained** discovery configs on the broker forever; the
+current firmware publishing none does not remove them. A raw `--expect-absent '.'` false-FAILs
+on that backlog (observed: 354 stale configs, all `sw_version 0.6.3` + a foreign id). Prove §3
+by either (a) clearing retained `homeassistant/…/config` first, then confirming the live
+firmware republishes none, or (b) ignoring any config whose `sw_version` ≠ the running fw
+version — only a config carrying the *current* version means the firmware is publishing discovery.
+
+## Hardware realities (validated on the bench, 2026-07)
+
+- **A free-running unit exposes NO USB serial.** Once the firmware autoboots, its network
+  core claims the USB-CDC, so `oselia monitor --passive` and `oselia board list` see nothing.
+  USB logs come only from a **held** `oselia monitor` session (no `--passive`), which
+  relaunches the app over a held USB session and streams it — that is how boot-time proof
+  (reset_cause, CH9120, MQTT online) is captured. For steady-state proof (a gesture, an
+  injected fault), run the trigger *while a held session is active*.
+- **Bench power ≠ soldered power.** The "never USB + 24 V together" rule is ONLY for the
+  soldered `dib-monolith`. On the **bench**, the Waveshare RP2040-ETH is USB-powered and the
+  MCP/input side is fed by external 24 V via a DC-DC, so USB + 24 V coexist — you CAN drive a
+  real 24 V press and capture USB (held session) at the same time. Dual USB+MQTT proof for
+  gestures is achievable on the bench; on a soldered unit it is MQTT-only (no simultaneous USB).
+
 ## Core oselia commands
 
-- **USB log:** `oselia monitor --passive` (listen without restarting) or `oselia monitor`.
+- **USB log:** `oselia monitor` — held session (relaunches + streams). `--passive` only works
+  on a paused/bench unit, NOT a free-running one (see Hardware realities).
 - **Watch MQTT:** `oselia mqtt watch <topics…> --for N [--json] [--expect-absent REGEX]`.
 - **Publish / clear retained:** `oselia mqtt pub <topic> <payload> [--retain]`.
 - **Control command:** `oselia mqtt cmd <id> <name> [payload]` — real names: `reboot`,
@@ -86,14 +109,20 @@ that arrives *after* your trigger, or whose `uptime_s`/timeline matches this run
 
 ## Running a criterion (the loop)
 
-For each matrix row: start `oselia monitor --passive` (capture USB) and `oselia mqtt watch`
+For each matrix row: start a held `oselia monitor` (capture USB) and `oselia mqtt watch`
 in parallel → apply the trigger via `oselia` (or, for §4/§5/§9, prompt the operator) → assert
 the USB pattern AND the MQTT assertion → record PASS/FAIL/BLOCKED + the two evidence lines.
 
 **Human-press criteria (§4/§5/§9)** need a physical 24 V switch press this skill can't
-actuate. Default run: **BLOCKED**, listing the exact manual steps. With `--interactive`:
-prompt the operator ("tap input 1 once", "hold input 1 >LONG_MS", for §9 "press input 2 during
-the outage I just triggered"), then verify USB+MQTT within a timeout; no press in time → BLOCKED.
+actuate. **ALWAYS confirm the operator is at the laptop and ready BEFORE starting the capture
+window** — never fire a timed watch into the void and then ask them to press (they may be
+away; you just waste the window). Flow: ask "ready, finger on the input?" → wait for their go
+→ start held monitor + `mqtt watch` → wait for the board to report online → then count them
+in ("tap input 1 once", "double-tap", "hold >LONG_MS"; for §9 "press during the outage I just
+triggered"). Verify USB+MQTT; no press in the window → re-cue (don't assume a firmware fault:
+diag `last` staying `""` with `boards_ok=1` means the press never reached the MCP — a missed
+press or wiring, not the firmware). Default (non-interactive) run: **BLOCKED** with the manual
+steps listed.
 
 **Coverage on the single-board rig:** 1,2,3,7 automatable · 4,5,9 need `--interactive` ·
 8 via `mqtt bounce` · 10,11 via the `--acceptance` hooks · 6 static/host · **12 BLOCKED**

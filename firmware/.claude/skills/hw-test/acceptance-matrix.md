@@ -6,17 +6,22 @@ criterion PASSes only when **both** channels are gathered and agree (see the ski
 rules). `<id>` = `oselia board id`; base topic = `hearth`.
 
 Conventions:
-- USB via `oselia monitor --passive`. MQTT via `oselia mqtt watch … --json --for N`.
+- USB via a **held** `oselia monitor` (a free-running unit exposes no USB serial; `--passive`
+  sees nothing — the network core owns USB-CDC). MQTT via `oselia mqtt watch … --json --for N`.
 - `status`/`cfg`/`diag` are **retained** → ignore the first (elapsed≈0) hit; trust only a
   message that arrives *after* the trigger, or whose `uptime_s` matches this run.
 - Gesture proof lines (`published …`, `gesture idx…`) are `log.debug` → first raise verbosity:
   `oselia mqtt cmd <id> log_level debug`.
+- **Press tests:** confirm the operator is at the laptop and ready BEFORE starting the window;
+  wait for the board online, then cue. Bench allows USB+24 V together (dual proof); a soldered
+  unit is MQTT-only. `boards_ok=1` + diag `last=""` after a "press" = the press never reached
+  the MCP (missed/wiring), not a firmware fault — re-cue.
 
 | # | Criterion | USB-log proof (regex) | MQTT proof | oselia to gather / trigger | Rig |
 |---|-----------|-----------------------|-----------|----------------------------|-----|
 | 1 | Boot + CH9120 TCP client up | `configuring CH9120\.\.\.` then `CH9120 DHCP lease: ` (DHCP) | (covered via #2 online) | `oselia monitor --passive` during `oselia provision` | auto |
 | 2 | MQTT CONNECT + LWT, `status`=online | `MQTT online \(CONNACK ok\)` | `hearth/<id>/status` == `online` (retained), published *after* boot | `oselia mqtt watch hearth/<id>/status --for 40` | auto |
-| 3 | OSELIA entities; NO firmware HA discovery | (n/a — absence proof is MQTT) | `oselia mqtt watch 'homeassistant/#' --for 6 --expect-absent '.'` exits 0 (nothing) | watch above; entities verified in HA registry, not firmware | auto |
+| 3 | OSELIA entities; NO firmware HA discovery | (n/a — absence proof is MQTT) | Clear retained `homeassistant/…/config` first, THEN confirm live fw republishes none — or ignore configs whose `sw_version` ≠ running fw. Raw `--expect-absent '.'` false-FAILs on stale retained configs (see skill). | watch; entities live in HA registry, not firmware | auto |
 | 4 | Gesture classification (single/double/long) | `gesture idx<i>=<g>` and `published b<b> in<p>=<g>` | `hearth/<id>/board<b>/input<p>/action` payload ∈ {single,double,long}; no stray `single` before `double`/`long` | `oselia mqtt cmd <id> log_level debug`; **operator press** (`--interactive`) | human |
 | 5 | Simultaneous inputs classified independently | two `gesture idx…` lines, distinct indices | two `…/action` messages, one per input, correct each | operator presses 2 inputs together (`--interactive`) | human |
 | 6 | ISR does no I²C/alloc; heavy work in loop | (static) | (static) | code/host review + `tests/test_press_detector.py`; not a wire check | host |
