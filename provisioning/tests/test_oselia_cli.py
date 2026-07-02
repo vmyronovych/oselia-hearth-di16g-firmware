@@ -8,8 +8,11 @@ flaky; the command tree is deterministic everywhere.
 
 Run:  python tests/test_oselia_cli.py
 """
+import subprocess
+
 import typer
 
+from oselia_provision import board
 from oselia_provision.cli import app
 
 _cli = typer.main.get_command(app)
@@ -53,6 +56,56 @@ def test_mqtt_watch_exposes_expect_absent_and_for():
 
 def test_mqtt_bounce_exposes_container():
     assert "--container" in _opts("mqtt", "bounce")
+
+
+def test_board_version_exposes_mpy_toggle():
+    # `board version` now reports the firmware version by default; --mpy falls back to the
+    # MicroPython runtime version.
+    assert "--mpy" in _opts("board", "version")
+
+
+def _fake_exec(monkeypatch, stdout, returncode=0):
+    def _exec(port, code, check=False, timeout=30):
+        return subprocess.CompletedProcess(["mpremote"], returncode, stdout, "")
+    monkeypatch.setattr(board, "exec_", _exec)
+
+
+class _MP:
+    """Tiny stand-in for pytest's monkeypatch so this runs under bare `python tests/…`."""
+    def __init__(self):
+        self._undo = []
+
+    def setattr(self, obj, name, value):
+        self._undo.append((obj, name, getattr(obj, name)))
+        setattr(obj, name, value)
+
+    def undo(self):
+        for obj, name, old in reversed(self._undo):
+            setattr(obj, name, old)
+
+
+def test_read_fw_version_parses_active_slot():
+    mp = _MP()
+    try:
+        _fake_exec(mp, "boot noise\nOSELIA_FW:0.9.5:b\n")
+        assert board.read_fw_version("/dev/ttyX") == ("0.9.5", "b")
+    finally:
+        mp.undo()
+
+
+def test_read_fw_version_handles_unresolvable():
+    mp = _MP()
+    try:
+        # A board whose active slot couldn't be imported reports the sentinel -> (None, None),
+        # never the repo placeholder.
+        _fake_exec(mp, "OSELIA_FW_ERR:ImportError('config')\n")
+        assert board.read_fw_version("/dev/ttyX") == (None, None)
+        # A blank/'?' version is also treated as unknown.
+        mp.undo()
+        _fake_exec(mp, "OSELIA_FW:?:a\n")
+        assert board.read_fw_version("/dev/ttyX") == (None, None)
+    finally:
+        mp.undo()
 
 
 def _run():

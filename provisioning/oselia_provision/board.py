@@ -251,6 +251,50 @@ def read_mpy_version(port):
     return _parse_uname_release(r.stdout) if r.returncode == 0 else None
 
 
+# The firmware SW_VERSION is the *release tag*, not the repo `config.SW_VERSION` placeholder:
+# the tag-stamped value only lives in the ACTIVE OTA slot's (compiled) `config`. Resolve the
+# active slot from /ota/state and import config from *that slot only* -- the other slot holds
+# a `.py` baseline whose SW_VERSION would shadow the real one if both dirs are on sys.path
+# (docs/releasing.md "Reading the running version off a board").
+_READ_FW_VERSION = (
+    "import sys, json\n"
+    "try:\n"
+    "    with open('/ota/state') as f:\n"
+    "        active = json.load(f).get('active', 'a')\n"
+    "except Exception:\n"
+    "    active = 'a'\n"
+    "d = '/slots/' + active\n"
+    "while d in sys.path:\n"
+    "    sys.path.remove(d)\n"
+    "sys.path.insert(0, d)\n"
+    "sys.modules.pop('config', None)\n"
+    "try:\n"
+    "    import config\n"
+    "    print('OSELIA_FW:%s:%s' % (getattr(config, 'SW_VERSION', '?'), active))\n"
+    "except Exception as _e:\n"
+    "    print('OSELIA_FW_ERR:' + repr(_e))\n"
+)
+
+
+def read_fw_version(port):
+    """The firmware version actually running on the board -> (version, active_slot).
+
+    Reads `SW_VERSION` from the ACTIVE OTA slot's `config` (the tag-stamped release value),
+    not the repo placeholder. Returns (None, None) if it can't be read (unprovisioned board,
+    corrupt slot, etc.)."""
+    if not port:
+        return (None, None)
+    r = exec_(port, _READ_FW_VERSION)
+    for line in (r.stdout or "").splitlines():
+        if "OSELIA_FW:" in line:
+            payload = line.split("OSELIA_FW:", 1)[1].strip()
+            ver, _, slot = payload.partition(":")
+            ver = ver.strip()
+            if ver and ver != "?":
+                return (ver, slot.strip() or None)
+    return (None, None)
+
+
 def read_device_id(port):
     """The device id the firmware uses (last 6 hex of unique_id, upper). -> id|None.
 

@@ -60,6 +60,29 @@ or type a specific one (e.g. `fw-v0.1.2`). It:
 The committed `src/config.py` `SW_VERSION` patch is just a base/dev default; releases
 carry the tag version, so they can't drift.
 
+## Reading the running version off a board
+
+Because the tag — not the repo — is the source of version truth (above), **never read a
+running unit's version from the repo `src/config.py`**: it's a dev placeholder and will
+disagree with what the device reports, by design.
+
+**Use `oselia board version`** (or `oselia board info`) — both now report the firmware
+`SW_VERSION` from the unit's **active OTA slot**, i.e. the real release-tag version the
+device runs. `oselia board info` prints the active slot alongside it (`firmware: 0.9.5
+(slot b)`); `oselia board version --mpy` falls back to the underlying MicroPython runtime
+version.
+
+Under the hood it reads `SW_VERSION` the only reliable way (see
+`board.read_fw_version` / `_READ_FW_VERSION`):
+
+1. Read `/ota/state` and take its `active` field (`"a"` or `"b"`).
+2. Read `SW_VERSION` from **that slot only** — the active slot holds the released `.mpy`
+   bundle (tag-stamped version); the *other* slot holds a `.py` baseline whose `SW_VERSION`
+   is the same repo placeholder.
+3. Avoid `sys.path` **shadowing**: if both slot dirs end up on the path, a baseline `.py`
+   `config` can shadow the active slot's `config.mpy` and hand you the wrong (placeholder)
+   version. The command resolves the active slot first and imports only it.
+
 ## Home Assistant side
 
 The OSELIA integration (installed via HACS) carries the firmware release feed, configured

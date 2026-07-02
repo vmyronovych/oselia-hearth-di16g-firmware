@@ -78,7 +78,7 @@ cp /tmp/RPI_PICO-v1.28.0.uf2 /Volumes/RPI-RP2/      # macOS; Linux: /media/<user
 
 ```bash
 oselia provision --broker <ip>     # write site.json + deploy the firmware into /slots/a, reset
-oselia board version               # verify the interpreter -> 1.28.0
+oselia board version --mpy         # verify the interpreter -> 1.28.0
 ```
 
 Then follow `bringup.md` from §2. The USB port re-enumerates after the flash (the serial

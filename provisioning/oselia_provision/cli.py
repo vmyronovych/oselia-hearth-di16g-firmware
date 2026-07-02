@@ -566,9 +566,12 @@ def board_list():
 
 @board_app.command("info")
 def board_info(port: str = typer.Option(None, "--port", help="Serial port of the board.")):
-    """Show the board's MicroPython version, device id, and site.json summary."""
+    """Show the board's firmware + MicroPython version, device id, and site.json summary."""
     target = _pick_board(port)
+    fw, slot = board.read_fw_version(target)
     console.info("port:        %s" % target)
+    console.info("firmware:    %s%s" % (fw or "? (not provisioned)",
+                                        " (slot %s)" % slot if fw and slot else ""))
     console.info("micropython: %s" % (board.read_mpy_version(target) or "?"))
     console.info("device id:   %s" % (board.read_device_id(target) or "?"))
     site = board.read_existing_site(target)
@@ -663,10 +666,19 @@ def board_id(port: str = typer.Option(None, "--port", help="Serial port of the b
 
 
 @board_app.command("version")
-def board_version(port: str = typer.Option(None, "--port", help="Serial port of the board.")):
-    """Print the board's MicroPython version."""
+def board_version(port: str = typer.Option(None, "--port", help="Serial port of the board."),
+                  mpy: bool = typer.Option(False, "--mpy", help="Print the MicroPython "
+                                           "runtime version instead of the firmware version.")):
+    """Print the firmware version running on the board (its active OTA slot).
+
+    This is the release-tag SW_VERSION the unit actually runs, not the repo placeholder.
+    Use --mpy for the underlying MicroPython interpreter version."""
     target = _pick_board(port)
-    console.info(board.read_mpy_version(target) or "?")
+    if mpy:
+        console.info(board.read_mpy_version(target) or "?")
+        return
+    fw, _slot = board.read_fw_version(target)
+    console.info(fw or "?")
 
 
 @board_app.command("repl")

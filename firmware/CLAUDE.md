@@ -17,6 +17,13 @@ work. When `docs/spec.md` and `docs/hardware.md` agree, that detail is settled �
   runs **MicroPython 1.28.0** (RPI_PICO build) — see `docs/flashing.md` for the pinned UF2
   version and how to reflash.
 - The broker must be addressed by **numeric IP** (CH9120 does no DNS).
+- **A unit's firmware version is the release tag, not the repo `SW_VERSION` (a dev
+  placeholder).** To read the version a local/workbench board is actually running (e.g.
+  when monitoring an OTA), use **`oselia board info`** (or `oselia board version`) — it
+  reports `SW_VERSION` from the board's **active OTA slot**. Never report the committed
+  `config.py` value as the device's version; see
+  [`docs/releasing.md` → "Reading the running version off a board"](docs/releasing.md#reading-the-running-version-off-a-board)
+  for why.
 
 ## Hardware pins (manufactured `dib-monolith` board)
 
