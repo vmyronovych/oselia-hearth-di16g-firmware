@@ -1,50 +1,58 @@
 """Host smoke tests for the oselia CLI surface (no board, no broker).
 
-Asserts the acceptance-suite subcommands (`mqtt …`, `ota …`) are registered and their
-help renders, so the hw-test skill can rely on them existing. Uses Typer's CliRunner.
+Asserts the acceptance-suite subcommands (`mqtt …`, `ota …`) and their key options are
+registered, so the hw-test skill can rely on them existing. Introspects the Click command
+tree directly rather than scraping `--help` text — help rendering is width-dependent (Rich
+wraps long option names on a narrow/no-TTY terminal, e.g. CI), which made substring checks
+flaky; the command tree is deterministic everywhere.
 
 Run:  python tests/test_oselia_cli.py
 """
-import os
+import typer
 
-# Force a wide render width BEFORE importing Typer/Rich: in a no-TTY environment (CI) Rich
-# falls back to a narrow width and WRAPS long option names (e.g. `--container`, `--expect-absent`)
-# across lines, which breaks substring assertions on the help text. Pinning COLUMNS makes the
-# help rendering deterministic across local (TTY) and CI (no TTY) runs.
-os.environ["COLUMNS"] = "200"
+from oselia_provision.cli import app
 
-from typer.testing import CliRunner              # noqa: E402
-
-from oselia_provision.cli import app             # noqa: E402
-
-_r = CliRunner()
+_cli = typer.main.get_command(app)
 
 
-def _help(*args):
-    res = _r.invoke(app, list(args) + ["--help"])
-    assert res.exit_code == 0, (args, res.exit_code, res.stdout)
-    return res.stdout
+def _cmd(*path):
+    cmd = _cli
+    for name in path:
+        cmd = cmd.commands[name]
+    return cmd
+
+
+def _subcommands(*path):
+    return set(_cmd(*path).commands.keys())
+
+
+def _opts(*path):
+    opts = set()
+    for param in _cmd(*path).params:
+        opts.update(getattr(param, "opts", []))
+        opts.update(getattr(param, "secondary_opts", []))
+    return opts
 
 
 def test_mqtt_subcommands_registered():
-    top = _help("mqtt")
+    subs = _subcommands("mqtt")
     for cmd in ("watch", "pub", "cmd", "bounce", "clear-retained"):
-        assert cmd in top, (cmd, top)
+        assert cmd in subs, (cmd, subs)
 
 
 def test_ota_subcommands_registered():
-    top = _help("ota")
+    subs = _subcommands("ota")
     for cmd in ("build", "publish"):
-        assert cmd in top, (cmd, top)
+        assert cmd in subs, (cmd, subs)
 
 
 def test_mqtt_watch_exposes_expect_absent_and_for():
-    h = _help("mqtt", "watch")
-    assert "--expect-absent" in h and "--for" in h
+    opts = _opts("mqtt", "watch")
+    assert "--expect-absent" in opts and "--for" in opts, opts
 
 
 def test_mqtt_bounce_exposes_container():
-    assert "--container" in _help("mqtt", "bounce")
+    assert "--container" in _opts("mqtt", "bounce")
 
 
 def _run():
