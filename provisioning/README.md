@@ -104,7 +104,9 @@ git checkout fw-v0.8.0           # then run oselia provision — it deploys 0.8.
 ```
 `oselia --version` shows the pinned **MicroPython** version; the `oselia provision` banner
 shows the **firmware** version it's about to deploy; `oselia board info` shows a board's
-MicroPython version, device id, and broker config.
+running **firmware** version (from its active OTA slot) alongside its MicroPython version,
+device id, and broker config. `oselia board version` prints just the firmware version
+(`--mpy` for the MicroPython runtime).
 
 ### Keeping the tool up to date
 ```bash

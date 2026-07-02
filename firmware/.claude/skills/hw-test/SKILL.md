@@ -53,13 +53,15 @@ signal to STOP (see Hard rules).
 1. **Host gate first (hard):** `python3 -m py_compile src/*.py` and every `tests/test_*.py`
    must pass. Red → STOP before touching the board (never deploy code that fails the gate).
 2. **Known baseline:** provision the unit to a clean, recorded state:
-   - `oselia flash` only if `oselia board version` ≠ the pinned interpreter.
+   - `oselia flash` only if `oselia board version --mpy` ≠ the pinned interpreter (bare
+     `oselia board version` reports the *firmware* version, not the MicroPython runtime).
    - `oselia provision --broker <ip> [--acceptance]` → fresh `/slots/a`. Use `--acceptance`
      to enable the §10/§11 fault-injection hooks (bench-only; production never carries them).
    - Clear retained topics so a stale snapshot can't false-PASS:
      `oselia mqtt pub hearth/<id>/status "" --retain` (and `…/cfg` if needed).
-   - Record `oselia board id`, `oselia board version`, `git rev-parse --short HEAD`,
-     `build=acceptance|production` into the report header.
+   - Record `oselia board id`, `oselia board version` (the firmware version, from the
+     active slot), `git rev-parse --short HEAD`, `build=acceptance|production` into the
+     report header.
 
 ## The evidence matrix
 

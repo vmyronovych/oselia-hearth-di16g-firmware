@@ -45,8 +45,9 @@ For provision, also pass creds as flags to skip prompts: `--broker IP[:PORT] --u
 | Need | `oselia` command | (raw mpremote it replaces) |
 |------|------------------|----------------------------|
 | List boards | `oselia board list` | `mpremote connect list` |
-| Version + id + site.json | `oselia board info` | several execs |
-| MicroPython version | `oselia board version` | `exec os.uname().release` |
+| Firmware + MicroPython version, id, site.json | `oselia board info` | several execs |
+| Firmware version (active slot `SW_VERSION`) | `oselia board version` | `exec` active-slot `SW_VERSION` |
+| MicroPython runtime version | `oselia board version --mpy` | `exec os.uname().release` |
 | Device id (6-hex) | `oselia board id` | `exec unique_id()` |
 | List a dir | `oselia board ls /slots/a` | `fs ls` |
 | Read a file | `oselia board cat site.json` | `fs cat :site.json` |
