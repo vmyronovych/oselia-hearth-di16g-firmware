@@ -5,9 +5,17 @@ help renders, so the hw-test skill can rely on them existing. Uses Typer's CliRu
 
 Run:  python tests/test_oselia_cli.py
 """
-from typer.testing import CliRunner
+import os
 
-from oselia_provision.cli import app
+# Force a wide render width BEFORE importing Typer/Rich: in a no-TTY environment (CI) Rich
+# falls back to a narrow width and WRAPS long option names (e.g. `--container`, `--expect-absent`)
+# across lines, which breaks substring assertions on the help text. Pinning COLUMNS makes the
+# help rendering deterministic across local (TTY) and CI (no TTY) runs.
+os.environ["COLUMNS"] = "200"
+
+from typer.testing import CliRunner              # noqa: E402
+
+from oselia_provision.cli import app             # noqa: E402
 
 _r = CliRunner()
 
