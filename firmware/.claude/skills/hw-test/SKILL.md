@@ -105,7 +105,13 @@ version — only a config carrying the *current* version means the firmware is p
   `identify`, `long_ms`/`double_gap_ms`/`debounce_ms`, `log_level`; acceptance-only:
   `_debug_stall` (§10), `_debug_mcp_fault <board>` (§11).
 - **Bounce broker (§8/§9):** `oselia mqtt bounce [--down N] [--container mosquitto]` (host
-  Docker; not a board action).
+  Docker; not a board action). **A single `oselia mqtt watch` does NOT survive the bounce**
+  (its own broker connection drops, no reconnect) — so start the post-bounce watcher *after*
+  the broker is back, or judge reconnect by the `diag` `reconnects` counter incrementing +
+  `status` returning `online`. The USB log (held session) is the reliable channel for the
+  §9 buffer→flush proof (gestures classified during the outage, `published…` burst on reconnect).
+- **Clear stale retained (§3):** `oselia mqtt clear-retained '<pattern>'` — old firmware leaves
+  retained `homeassistant/.../config` on the broker; clear them before the §3 check.
 
 ## Running a criterion (the loop)
 
