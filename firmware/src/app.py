@@ -82,6 +82,9 @@ def main():
     # on the initial values with no startup race (core1 may publish/handle commands).
     shared.init_tunables(cfg.LONG_MS, cfg.DOUBLE_GAP_MS, cfg.DEBOUNCE_MS)
     shared.set_reset_cause(_reset_cause())
+    # §10 acceptance proof: the reboot cause is visible on the very first USB line after a
+    # reset. "wdt" here means the watchdog caught a hung core (or a bare machine.reset()).
+    log.info("boot: reset_cause=%s" % shared.reset_cause)
     queue = EventQueue(cfg.EVENT_QUEUE_SIZE, lock)
 
     # Warm up modules that are otherwise imported lazily at runtime, BEFORE

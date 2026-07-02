@@ -148,9 +148,10 @@ When you hit a board operation the CLI doesn't cover yet:
 Goal: the next session never needs raw mpremote — the pattern is captured here.
 
 ## Relationship to other tooling
-- `firmware/.claude/skills/hw-test` + `firmware/tools/*.sh` cover **MQTT-side** bring-up
-  testing (watch discovery/action topics, broker-bounce regression, gesture tests). This
-  skill covers **USB-side** board control + provisioning. They complement each other.
+- `firmware/.claude/skills/hw-test` covers on-hardware **acceptance** + bring-up (watch
+  action/status/diag topics, broker-bounce reconnect, gesture tests) — all through this
+  same `oselia` CLI, which it also extends (`oselia mqtt watch/pub/cmd/bounce`). This skill
+  covers **USB-side** board control + provisioning. They complement each other.
 - `oselia` is the single host tool; `provisioning/PROVISIONING_SPEC.md` is its design
   contract. HA integration/dashboard is no longer pushed by the tool — the OSELIA
   integration is installed via HACS and the dashboard is rendered with `oselia dashboard

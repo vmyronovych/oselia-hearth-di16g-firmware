@@ -153,6 +153,7 @@ class _Slot:
         self.mcp = MCP23017(i2c, addr, retries=cfg.I2C_RETRIES)
         self.status = BoardStatus(board, addr)
         self.bits = _IDLE_BITS       # last read (idle = all released for active-low)
+        self._force_fault = 0        # acceptance hooks: N pending injected read failures
 
     def try_init(self, now_ms):
         """(Re)initialise the chip. Returns (ok, edge); edge True on a not-ok->ok
@@ -180,6 +181,9 @@ class _Slot:
     def read(self, now_ms):
         """Read a healthy chip. Returns True on a down edge (ok->not-ok)."""
         try:
+            if self._force_fault > 0:            # acceptance hooks: injected NAK (§11)
+                self._force_fault -= 1
+                raise OSError(5, "acceptance-injected MCP fault")
             self.bits = self.mcp.read_all()
             self.status.mark_ok(now_ms)        # ok->ok is not an edge
             return False
@@ -291,6 +295,19 @@ def run(shared, queue):
 
     while True:
         now = mono.ms()
+
+        # Acceptance fault injection (§11): core1 handled a _debug_mcp_fault command and
+        # asked us to force this board's next reads to fail, exercising the real fail->
+        # recovery->re-init path. Compiled-in only conceptually -- gated by the flag so a
+        # production build never acts on it.
+        if cfg.ACCEPTANCE_HOOKS:
+            df = shared.take_debug_fault()
+            if df is not None:
+                b, cnt = df
+                for s in slots:
+                    if s.board == b:
+                        s._force_fault = cnt
+                        log.warn("ACCEPTANCE: injecting %d MCP fault(s) on board%d" % (cnt, b))
 
         # Live re-tune: cheap unlocked int compare each pass; lock only on change.
         if shared.tune_version != applied_tune_ver:

@@ -35,6 +35,27 @@ def test_queue_drop_oldest_when_full():
     assert q.get() == (99, "x")
 
 
+def test_queue_discard_all_drops_backlog_and_counts():
+    # The reconnect path drops the offline backlog (live-or-nothing) instead of replaying it.
+    q = EventQueue(8)
+    for i in range(5):
+        q.put((i, "single"))
+    assert len(q) == 5
+    n = q.discard_all()
+    assert n == 5                    # returned the count it dropped
+    assert len(q) == 0               # queue is now empty -> nothing replays on reconnect
+    assert q.dropped == 5            # discards are visible in telemetry
+    assert q.get() is None
+    # queue is still usable afterwards (normal handoff continues)
+    q.put((7, "long"))
+    assert q.get() == (7, "long")
+
+
+def test_queue_discard_all_empty_is_noop():
+    q = EventQueue(4)
+    assert q.discard_all() == 0 and q.dropped == 0
+
+
 def test_queue_wraparound():
     q = EventQueue(2)
     q.put("a"); q.put("b")

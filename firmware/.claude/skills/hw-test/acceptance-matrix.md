@@ -1,0 +1,41 @@
+# Acceptance evidence matrix — `docs/spec.md §10`
+
+Durable, versioned source of truth for the `hw-test` skill. Each row maps a §10 criterion to
+its **USB-log** proof, its **MQTT** proof, and the `oselia` command(s) that gather each. A
+criterion PASSes only when **both** channels are gathered and agree (see the skill's Hard
+rules). `<id>` = `oselia board id`; base topic = `hearth`.
+
+Conventions:
+- USB via a **held** `oselia monitor` (a free-running unit exposes no USB serial; `--passive`
+  sees nothing — the network core owns USB-CDC). MQTT via `oselia mqtt watch … --json --for N`.
+- `status`/`cfg`/`diag` are **retained** → ignore the first (elapsed≈0) hit; trust only a
+  message that arrives *after* the trigger, or whose `uptime_s` matches this run.
+- Gesture proof lines (`published …`, `gesture idx…`) are `log.debug` → first raise verbosity:
+  `oselia mqtt cmd <id> log_level debug`.
+- **Press tests:** confirm the operator is at the laptop and ready BEFORE starting the window;
+  wait for the board online, then cue. Bench allows USB+24 V together (dual proof); a soldered
+  unit is MQTT-only. `boards_ok=1` + diag `last=""` after a "press" = the press never reached
+  the MCP (missed/wiring), not a firmware fault — re-cue.
+
+| # | Criterion | USB-log proof (regex) | MQTT proof | oselia to gather / trigger | Rig |
+|---|-----------|-----------------------|-----------|----------------------------|-----|
+| 1 | Boot + CH9120 TCP client up | `configuring CH9120\.\.\.` then `CH9120 DHCP lease: ` (DHCP) | (covered via #2 online) | `oselia monitor --passive` during `oselia provision` | auto |
+| 2 | MQTT CONNECT + LWT, `status`=online | `MQTT online \(CONNACK ok\)` | `hearth/<id>/status` == `online` (retained), published *after* boot | `oselia mqtt watch hearth/<id>/status --for 40` | auto |
+| 3 | OSELIA entities; NO firmware HA discovery | (n/a — absence proof is MQTT) | Clear retained `homeassistant/…/config` first, THEN confirm live fw republishes none — or ignore configs whose `sw_version` ≠ running fw. Raw `--expect-absent '.'` false-FAILs on stale retained configs (see skill). | watch; entities live in HA registry, not firmware | auto |
+| 4 | Gesture classification (single/double/long) | `gesture idx<i>=<g>` and `published b<b> in<p>=<g>` | `hearth/<id>/board<b>/input<p>/action` payload ∈ {single,double,long}; no stray `single` before `double`/`long` | `oselia mqtt cmd <id> log_level debug`; **double-tap is opt-in** — `DOUBLE_GAP_MS` default 0 DISABLES `double` by design (single fires instantly), so `oselia mqtt cmd <id> double_gap_ms 300` before asserting `double`; **operator press** (`--interactive`) | human |
+| 5 | Simultaneous inputs classified independently | two `gesture idx…` lines, distinct indices | two `…/action` messages, one per input, correct each | operator presses 2 inputs together (`--interactive`) | human |
+| 6 | ISR does no I²C/alloc; heavy work in loop | (static) | (static) | code/host review + `tests/test_press_detector.py`; not a wire check | host |
+| 7 | Host tests + `py_compile` green | (host) | (host) | `python3 -m py_compile src/*.py`; `for t in tests/test_*.py; do python3 "$t"; done` | host |
+| 8 | Reconnect w/ backoff; resub + cfg reseed | `link/keepalive lost; reconnecting` → `connect failed: .* \(retry \d+ms\)` → `MQTT online \(CONNACK ok\)` → `resubscribed cmd/# \+ reseeded cfg` | `status` goes `online`→(offline)→`online`; `cfg` re-published after reconnect | `oselia mqtt bounce --down 8`; watch `hearth/<id>/status` + monitor | auto |
+| 9 | Input timing unaffected; stale presses dropped | `gesture idx…` lines appear during the outage (detection unaffected); on reconnect `dropped %d stale gesture(s) buffered during outage` — NO `published…` burst | NO `…/action` flood on reconnect; diag `dropped` jumps by the backlog size | `oselia mqtt bounce --down 8`; operator presses during outage (`--interactive`) | human |
+| 10 | Hung core → watchdog reset | next boot: `boot: reset_cause=wdt` (preceded by `ACCEPTANCE: stalling core1 …`) | `status` LWT→`offline` then fresh `online` with low `diag uptime_s` | `oselia mqtt cmd <id> _debug_stall` (needs `--acceptance` build) | hook |
+| 11 | MCP glitch retried; absent chip recovered | `board<b> read failed` → `MCP recovery L1/L2` → `board<b> MCP@0x.. ready` | `diag/state` `boards_ok` dips then returns; a `diag/event` fault record | `oselia mqtt cmd <id> _debug_mcp_fault <b>` (needs `--acceptance`); watch `hearth/<id>/diag/#` | hook |
+| 12 | Multi-board numbering; one absent doesn't shift others | `MCP boards: N (…)`; per-board `gesture idx…` | `…/board<b>/input<p>/action` for each wired board, correct numbering | needs ≥2 MCP chips wired | **BLOCKED** unless wired |
+
+## Extending for new functionality (change-scoped runs)
+
+When a diff adds behavior not covered above, append a row with the same three columns. If no
+existing USB log proves the new behavior, **propose a debug-log diff** in `src/` (HR4) rather
+than inferring success — a criterion with only one proof channel is BLOCKED-pending-log, never
+PASS. If proving it needs an `oselia` capability that doesn't exist, STOP and flag the gap
+(HR2) instead of improvising.

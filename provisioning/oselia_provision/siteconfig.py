@@ -24,7 +24,8 @@ def board_count_to_addrs(n):
 
 
 def build_site_dict(broker_ip, broker_port, user, password,
-                    board_count=None, use_dhcp=True, static=None, diag=True):
+                    board_count=None, use_dhcp=True, static=None, diag=True,
+                    acceptance_hooks=False):
     """Assemble site.json. `board_count` None -> firmware auto-discovers the I2C boards
     (key omitted). `static` (if given) = {"ip","gateway","mask"} and forces DHCP off.
     `diag` only written when False (default on), to keep the file minimal.
@@ -54,4 +55,6 @@ def build_site_dict(broker_ip, broker_port, user, password,
         site["use_dhcp"] = False
     if not diag:
         site["diag"] = False                 # default on; only record the opt-out
+    if acceptance_hooks:
+        site["acceptance_hooks"] = True      # bench-only; production never sets this
     return site

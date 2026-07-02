@@ -16,13 +16,15 @@ takes defaults and never blocks (see console.py).
 """
 import json
 import os
+import re
 import subprocess
 import sys
+from typing import List
 
 import typer
 
 from . import (__version__, board, console, dashboard, discovery, firmware, flash,
-               monitor, mqtt, quiesce, siteconfig)
+               monitor, mqtt, paths, quiesce, siteconfig)
 from .constants import (DEFAULT_BASE_TOPIC, EXPECTED_MPY_VERSION, MAX_BOARDS, MPY_UF2_NAME)
 
 app = typer.Typer(no_args_is_help=True, add_completion=False,
@@ -30,8 +32,14 @@ app = typer.Typer(no_args_is_help=True, add_completion=False,
 board_app = typer.Typer(no_args_is_help=True, help="Low-level board operations "
                         "(quirk-aware mpremote wrappers -- use these instead of raw mpremote).")
 dashboard_app = typer.Typer(no_args_is_help=True, help="Render Home Assistant assets.")
+mqtt_app = typer.Typer(no_args_is_help=True, help="Observe and drive the MQTT broker "
+                       "(watch/pub/cmd/bounce) -- used by the hw acceptance suite.")
+ota_app = typer.Typer(no_args_is_help=True, help="Build/publish OTA firmware bundles "
+                      "(fronts the kept OTA pipeline).")
 app.add_typer(board_app, name="board")
 app.add_typer(dashboard_app, name="dashboard")
+app.add_typer(mqtt_app, name="mqtt")
+app.add_typer(ota_app, name="ota")
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +133,10 @@ def provision(
                                     "auto-discovering MCP chips." % MAX_BOARDS),
     no_diag: bool = typer.Option(False, "--no-diag",
                                  help="Disable diagnostics telemetry on the unit."),
+    acceptance: bool = typer.Option(False, "--acceptance",
+                                    help="BENCH ONLY: enable the §10/§11 fault-injection "
+                                         "commands so the hw acceptance suite can prove the "
+                                         "watchdog + MCP-recovery paths. Never use in the field."),
     skip_mpy_check: bool = typer.Option(False, "--skip-mpy-check",
                                         help="Don't check the MicroPython version / offer to flash."),
     mpy_uf2: str = typer.Option(None, metavar="PATH",
@@ -192,7 +204,10 @@ def provision(
 
         site = siteconfig.build_site_dict(
             broker_ip, broker_port, muser, mpass, board_count=boards, use_dhcp=True,
-            static=static_d, diag=not no_diag)
+            static=static_d, diag=not no_diag, acceptance_hooks=acceptance)
+        if acceptance:
+            console.warn("Acceptance hooks ENABLED (bench build): §10/§11 fault-injection "
+                         "commands are live. Do not deploy this unit to the field.")
         if existing:                           # preserve board-written live tunables
             for k in ("long_ms", "double_gap_ms", "debounce_ms", "log_level"):
                 if k in existing and k not in site:
@@ -695,6 +710,176 @@ def dashboard_render(
         console.ok("wrote %s" % out)
     else:
         sys.stdout.write(text)
+
+
+# ===========================================================================
+# mqtt  (observe + actuate the broker; the hw acceptance suite talks only to oselia)
+# ===========================================================================
+def _resolve_broker(broker):
+    """Resolve a broker to (ip, port). Non-interactive-friendly: --broker wins outright."""
+    return discovery.prompt_broker(broker, None)
+
+
+@mqtt_app.command("watch")
+def mqtt_watch(
+    topics: List[str] = typer.Argument(..., help="Topic filters to subscribe (MQTT "
+                                       "wildcards + / # ok)."),
+    broker: str = typer.Option(None, "--broker", metavar="IP[:PORT]",
+                               help="Broker to watch (skip discovery)."),
+    user: str = typer.Option(None, "--user", help="MQTT username."),
+    password: str = typer.Option(None, "--password", help="MQTT password."),
+    for_s: float = typer.Option(10.0, "--for", metavar="SECONDS", help="How long to watch."),
+    expect_absent: str = typer.Option(None, "--expect-absent", metavar="REGEX",
+                                      help="Exit 3 if any published topic matches this regex "
+                                           "during the window (e.g. assert NO HA discovery)."),
+    as_json: bool = typer.Option(False, "--json", help="One JSON object per message (for the "
+                                 "acceptance suite to parse)."),
+):
+    """Subscribe to topics and print PUBLISHes for --for seconds. Read-only; never touches
+    the board. Retained messages arrive first (elapsed ~0)."""
+    ip, port = _resolve_broker(broker)
+    pat = re.compile(expect_absent) if expect_absent else None
+    hits = []
+
+    def _on(topic, payload, t):
+        text = payload.decode("utf-8", "replace")
+        if as_json:
+            print(json.dumps({"t": round(t, 3), "topic": topic, "payload": text}))
+        else:
+            console.info("  %8.3f  %s  %s" % (t, topic, text))
+        if pat and pat.search(topic):
+            hits.append(topic)
+
+    console.step("Watching %s on %s:%d for %.0fs ..." % (", ".join(topics), ip, port, for_s))
+    msgs = mqtt.watch(ip, port, user, password, topics, duration=for_s, on_message=_on)
+    console.info("  %d message(s) in %.0fs." % (len(msgs), for_s))
+    if pat:
+        if hits:
+            console.die("expect-absent VIOLATED: %s published" % ", ".join(sorted(set(hits))),
+                        code=3)
+        console.ok("expect-absent OK: nothing matched /%s/" % expect_absent)
+
+
+@mqtt_app.command("pub")
+def mqtt_pub(
+    topic: str = typer.Argument(..., help="Topic to publish."),
+    payload: str = typer.Argument("", help="Payload (default empty)."),
+    broker: str = typer.Option(None, "--broker", metavar="IP[:PORT]"),
+    user: str = typer.Option(None, "--user"),
+    password: str = typer.Option(None, "--password"),
+    retain: bool = typer.Option(False, "--retain", help="Publish as a retained message."),
+):
+    """Publish an arbitrary topic/payload (QoS0). Use to drive a test topic or clear a
+    retained one (`--retain` with an empty payload)."""
+    ip, port = _resolve_broker(broker)
+    ok = mqtt.publish(ip, port, user, password, topic, payload, retain=retain)
+    if not ok:
+        console.die("publish failed (could not reach broker %s:%d)" % (ip, port))
+    console.ok("published%s -> %s" % (" (retained)" if retain else "", topic))
+
+
+@mqtt_app.command("cmd")
+def mqtt_cmd(
+    device: str = typer.Argument(..., help="Device id, e.g. 893922."),
+    name: str = typer.Argument(..., help="Command name under …/cmd/<name> (Restart, Identify, "
+                               "a number/select name, or a DEBUG hook like _debug_stall)."),
+    payload: str = typer.Argument("", help="Optional command payload."),
+    broker: str = typer.Option(None, "--broker", metavar="IP[:PORT]"),
+    user: str = typer.Option(None, "--user"),
+    password: str = typer.Option(None, "--password"),
+    base_topic: str = typer.Option(DEFAULT_BASE_TOPIC, "--base", help="Base topic."),
+):
+    """Send a control command to <base>/<device>/cmd/<name> (QoS0, not retained)."""
+    ip, port = _resolve_broker(broker)
+    ok = mqtt.send_command(ip, port, user, password, base_topic, device, name,
+                           payload.encode())
+    if not ok:
+        console.die("command send failed (could not reach broker %s:%d)" % (ip, port))
+    console.ok("sent %s/%s/cmd/%s" % (base_topic, device, name))
+
+
+@mqtt_app.command("clear-retained")
+def mqtt_clear_retained(
+    topics: List[str] = typer.Argument(..., help="Topic filter(s) to scrub, e.g. "
+                                       "'homeassistant/#' or 'homeassistant/+/893922/#'."),
+    broker: str = typer.Option(None, "--broker", metavar="IP[:PORT]"),
+    user: str = typer.Option(None, "--user"),
+    password: str = typer.Option(None, "--password"),
+    for_s: float = typer.Option(4.0, "--for", metavar="SECONDS",
+                                help="How long to collect the retained set first."),
+):
+    """Clear retained messages under a topic filter (publish empty retained to each). Use to
+    scrub stale HA discovery configs a prior firmware left behind so the §3 'no discovery'
+    check reads clean. Lists the set and confirms before clearing (bypass with --yes)."""
+    ip, port = _resolve_broker(broker)
+    victims = mqtt.clear_retained(ip, port, user, password, topics, collect_s=for_s,
+                                  dry_run=True)
+    if not victims:
+        console.ok("nothing retained under %s -- already clean." % ", ".join(topics))
+        return
+    console.info("%d retained topic(s) to clear under %s (e.g. %s)"
+                 % (len(victims), ", ".join(topics), victims[0]))
+    if not console.confirm("Clear all %d retained message(s)?" % len(victims), default=False):
+        console.die("Aborted; nothing cleared.")
+    cleared = mqtt.clear_retained(ip, port, user, password, topics, collect_s=for_s)
+    console.ok("cleared %d retained message(s)." % len(cleared))
+
+
+@mqtt_app.command("bounce")
+def mqtt_bounce(
+    container: str = typer.Option("mosquitto", "--container",
+                                  help="Docker container name of the broker."),
+    down_s: float = typer.Option(0.0, "--down", metavar="SECONDS",
+                                 help="If >0, stop the broker, wait, then start (a clean "
+                                      "outage window); default does a `docker restart`."),
+):
+    """Bounce the local MQTT broker to exercise the board's reconnect path (criteria 8/9).
+
+    HOST-INFRA: this drives Docker, not the board. Requires the broker to run in a local
+    Docker container (the test rig's `mosquitto`)."""
+    if down_s > 0:
+        console.step("Stopping broker container %r for %.0fs ..." % (container, down_s))
+        rc = subprocess.call(["docker", "stop", container])
+        if rc != 0:
+            console.die("docker stop %s failed (is the container named right / Docker up?)"
+                        % container)
+        import time as _time
+        _time.sleep(down_s)
+        console.step("Starting broker container %r ..." % container)
+        rc = subprocess.call(["docker", "start", container])
+    else:
+        console.step("Restarting broker container %r ..." % container)
+        rc = subprocess.call(["docker", "restart", container])
+    if rc != 0:
+        console.die("docker restart/start %s failed" % container)
+    console.ok("broker %r bounced." % container)
+
+
+# ===========================================================================
+# ota  (front the kept OTA pipeline so the suite only ever calls `oselia`)
+# ===========================================================================
+def _run_ota(script, argv):
+    """Run a kept OTA pipeline script with the current interpreter, forwarding argv."""
+    if not os.path.exists(script):
+        console.die("OTA script not found: %s (set OSELIA_OTA_BUILD/PUBLISH to override)"
+                    % script)
+    raise typer.Exit(subprocess.call([sys.executable, script] + list(argv)))
+
+
+@ota_app.command("build", context_settings={"allow_extra_args": True,
+                                             "ignore_unknown_options": True})
+def ota_build(ctx: typer.Context):
+    """Build an OTA bundle + manifest. Passes flags through to the bundle builder
+    (`--out …`, `--no-mpy`, `--manifest …`, `--notes …`; see `oselia ota build -- --help`)."""
+    _run_ota(paths.OTA_BUILD, ctx.args)
+
+
+@ota_app.command("publish", context_settings={"allow_extra_args": True,
+                                               "ignore_unknown_options": True})
+def ota_publish(ctx: typer.Context):
+    """Stream an OTA bundle to a board over MQTT. Passes flags through to the publisher
+    (`--broker …`, `--device …`; see `oselia ota publish -- --help`)."""
+    _run_ota(paths.OTA_PUBLISH, ctx.args)
 
 
 if __name__ == "__main__":

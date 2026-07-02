@@ -97,13 +97,30 @@ reference. Any command/diagnostic publish must stay **behind the gesture-queue d
    `python3 -m py_compile src/*.py` (validates syntax without importing `machine`).
 2. **Unit-test** on the host (all must pass):
    `for t in tests/test_*.py; do python3 "$t"; done`.
-3. **Deploy** to the board with `mpremote`:
-   `mpremote connect <port> fs cp config.py src/*.py :` then reset (runs `main.py`).
-4. **On-device checks** per `docs/spec.md §9`: link/keepalive healthy, `mosquitto_sub`
-   sees discovery + action topics, HA shows the device & triggers, LED states.
+3. **Deploy** to the board with the `oselia` CLI (slot-aware — the loader boots
+   `/slots/a/app.py`, so raw `fs cp` to the board root is a no-op): `oselia provision
+   --broker <ip>`, which writes `site.json`, deploys into `/slots/a`, and resets.
+4. **On-device checks** per `docs/spec.md §9` via the `hw-test` skill: link/keepalive
+   healthy, `oselia mqtt watch` sees action/status/diag topics, HA shows the device &
+   triggers, LED states. Every acceptance criterion is proven on **both** USB log + MQTT.
 
 Do not mark a task done if py_compile fails, host tests fail, or an implementation
 is partial (`docs/spec.md §10`).
+
+## Hardware acceptance — hard requirements (non-negotiable)
+
+On-hardware acceptance is run via the `hw-test` skill, which **enforces** these. They are
+the contract; do not work around them:
+
+1. **`oselia` CLI only** — never `mpremote`/`mosquitto_*`/`tools/*.sh` for board or broker.
+2. **Missing `oselia` capability → STOP and flag** — add it to the CLI, never a one-off tool.
+3. **No USB logs → STOP** — without real logs you are guessing, and guessing is not acceptance.
+4. **Logs must *prove* new functionality** — if they can't, propose a firmware debug-log addition.
+5. **Dual proof** — a criterion PASSes only when confirmed on **both** the USB log **and** the
+   MQTT wire, and the two agree.
+
+Full rules + verdict taxonomy + the §10 evidence matrix live in
+`.claude/skills/hw-test/SKILL.md` and `.claude/skills/hw-test/acceptance-matrix.md`.
 
 ## Definition of done
 
@@ -114,10 +131,11 @@ leave a clearly-marked `# HW-VERIFY:` comment, and note it for the user.
 ## Remaining work (the code is otherwise complete)
 
 1. `cp config.example.py config.py`; set broker IP, network, input names.
-2. Flash MicroPython (UF2 v1.28.0 — see `docs/flashing.md`), copy `src/*.py` + `config.py`
-   to the board root.
+2. `oselia provision --broker <ip>` — flashes MicroPython v1.28.0 if needed (see
+   `docs/flashing.md`), writes `site.json`, and deploys the firmware into `/slots/a`.
 3. On-hardware bring-up: confirm CH9120 connects, watch the LED state machine,
-   verify `mosquitto_sub` sees retained discovery + per-gesture action topics.
+   verify `oselia mqtt watch` sees the per-gesture action topics (and **no** firmware
+   HA discovery).
 4. Confirm HA renders the 48 device-automation triggers; wire a test automation.
 5. Tune `DEBOUNCE_MS` / `LONG_MS` / `DOUBLE_GAP_MS` to feel; validate the watchdog
    by forcing a stall; validate reconnect by bouncing the broker.

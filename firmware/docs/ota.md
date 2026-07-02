@@ -157,9 +157,9 @@ already tell `net_task` exactly when "online + healthy" holds.
   swap. The HTTP client is a minimal `GET`/HTTP-1.0 reader over `UartStream`
   (reuse `net_stream.UartStream`, add a `read(n)`-driven body reader); parses
   status line + `Content-Length`.
-- `tools/deploy.sh` + `oselia provision`: install the loader at root and
-  the app into `/slots/a/`, write `/ota/active=a`. (One-time layout change; this is
-  the only place that changes how files land on the board.)
+- `oselia provision`: installs the loader at root and the app into `/slots/a/`, writes
+  `/ota/active=a`. (One-time layout change; this is the only place that changes how files
+  land on the board.)
 
 ### 3. CH9120 reconfig for the pull
 - Reuse `ch9120.bring_up()` / `CH9120.configure()` (`src/ch9120.py:69,94`) but
@@ -179,9 +179,9 @@ already tell `net_task` exactly when "online + healthy" holds.
 ### 5. Host side — new `ota/` sibling dir (mirrors `provisioning/`)
 - `ota/ota_publish.py`: build bundle (manifest = `[[name,size,sha256],…]` then
   concatenated file bytes — no tar lib needed on device), start a stdlib
-  `http.server` bound to a numeric LAN IP, publish the command (via `mosquitto_pub`,
-  already used in `tools/`, to avoid a new paho dependency), and tail `…/ota/state`
-  (via `mosquitto_sub`) for progress/result.
+  `http.server` bound to a numeric LAN IP, publish the command (via `oselia mqtt pub`,
+  reusing the CLI's stdlib MQTT client — no new paho dependency), and tail `…/ota/state`
+  (via `oselia mqtt watch`) for progress/result.
 - `ota/README.md`: the contract (topics, command JSON, bundle format, slot/rollback
   semantics) — a pointer to this document, if the host tooling lands in a sibling dir.
 
