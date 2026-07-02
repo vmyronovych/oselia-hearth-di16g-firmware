@@ -517,6 +517,15 @@ def run(shared, queue, device_id):
                     # clean-session: re-subscribe to the OTA command + data topics.
                     client.subscribe(ota_cmd_topic)
                     client.subscribe(ota_data_topic)
+                # Live-or-nothing: any gestures that queued while we were offline are STALE
+                # now. Replaying the backlog would act on old intent and, if an HA automation
+                # toggles a relay per press, flap it many times in a burst (contact wear +
+                # inrush stress on the wired load). Drop the backlog on (re)connect; the
+                # discards are counted in diag `dropped`. A press must be delivered live or not
+                # at all. (spec.md sec.9 / sec.10.9)
+                _stale = queue.discard_all()
+                if _stale:
+                    log.warn("dropped %d stale gesture(s) buffered during outage" % _stale)
                 if not first_connect:
                     reconnects += 1
                 first_connect = False

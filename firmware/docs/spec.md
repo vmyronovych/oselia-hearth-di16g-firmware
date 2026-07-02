@@ -445,8 +445,13 @@ Pure modules (no `machine`/`network` imports): `press_detector`, `debounce`,
    backoff without a manual reset; availability returns to `online` and the command
    subscriptions + `cfg` seed are re-sent.
 9. While the network task is busy reconnecting, **input timing is unaffected**:
-   gestures are still classified correctly and buffered in the queue, then flushed
-   on reconnect.
+   gestures are still classified correctly by core 0. Presses are **live-or-nothing** —
+   the queue absorbs only the brief cross-core handoff; a backlog that accumulates while
+   the broker is unreachable is **dropped on reconnect** (counted in diag `dropped`), NOT
+   replayed. Replaying stale presses would act on old intent and could flap an HA-driven
+   relay in a burst (contact wear / inrush stress). Verify: press during the outage → the
+   detection appears on USB, the stale events are dropped, and no `…/action` burst floods
+   the broker on reconnect.
 10. A hung core (either one) triggers a watchdog reset (verify by forcing a stall).
 11. MCP I²C glitches are retried; a removed/unresponsive MCP is reflected on the LED
     and recovered (re-init) when it returns.
@@ -526,9 +531,10 @@ Still to confirm:
   return code is validated.
 - **I²C resilience**: bounded retries on every MCP read/write; periodic presence
   check; auto re-init when the device returns; bus/`/RESET` recovery (above).
-- **Bounded event queue** with drop-oldest + dropped counter (newest button activity
-  always survives a backlog); graceful degradation — detection continues offline and
-  flushes on reconnect.
+- **Bounded event queue** with drop-oldest + dropped counter for the cross-core handoff.
+  Detection continues while offline, but presses are **live-or-nothing**: the offline
+  backlog is **discarded on reconnect** (not replayed) so stale presses can't flap an
+  HA-driven relay in a burst. Discards are counted in `dropped`.
 - **Wrap-safe timing** via `clock.Monotonic`; **no allocation in the ISR**; periodic
   `gc.collect()` at safe points on core 1; `_thread.stack_size` raised for core 1.
 - **Leveled, rate-limited logging** so fault loops don't flood the console.

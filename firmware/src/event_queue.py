@@ -63,6 +63,19 @@ class EventQueue:
             self._count -= 1
             return item
 
+    def discard_all(self):
+        """Drop every buffered event without delivering it; count them as dropped. Returns
+        the number discarded. Used on reconnect: a momentary press that couldn't be published
+        live is stale, and replaying the backlog would act on old intent (and flap relays)."""
+        with self._lock:
+            n = self._count
+            for i in range(self._size):
+                self._buf[i] = None
+            self._head = 0
+            self._count = 0
+            self._dropped += n
+            return n
+
     def __len__(self):
         with self._lock:
             return self._count
