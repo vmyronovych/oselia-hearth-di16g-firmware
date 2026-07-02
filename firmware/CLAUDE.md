@@ -107,6 +107,21 @@ reference. Any command/diagnostic publish must stay **behind the gesture-queue d
 Do not mark a task done if py_compile fails, host tests fail, or an implementation
 is partial (`docs/spec.md §10`).
 
+## Hardware acceptance — hard requirements (non-negotiable)
+
+On-hardware acceptance is run via the `hw-test` skill, which **enforces** these. They are
+the contract; do not work around them:
+
+1. **`oselia` CLI only** — never `mpremote`/`mosquitto_*`/`tools/*.sh` for board or broker.
+2. **Missing `oselia` capability → STOP and flag** — add it to the CLI, never a one-off tool.
+3. **No USB logs → STOP** — without real logs you are guessing, and guessing is not acceptance.
+4. **Logs must *prove* new functionality** — if they can't, propose a firmware debug-log addition.
+5. **Dual proof** — a criterion PASSes only when confirmed on **both** the USB log **and** the
+   MQTT wire, and the two agree.
+
+Full rules + verdict taxonomy + the §10 evidence matrix live in
+`.claude/skills/hw-test/SKILL.md` and `.claude/skills/hw-test/acceptance-matrix.md`.
+
 ## Definition of done
 
 Everything in **docs/spec.md §10 Acceptance criteria** holds. When something can only be
